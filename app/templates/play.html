@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Review</title>
+</head>
+<body style="text-align:center; font-family:sans-serif;">
+  <div style="margin: 50px auto; max-width: 600px;">
+    <p><em>{{ prev_text }}</em></p>
+    <!-- <h2>{{ curr_text }}</h2> -->
+    <p><strong>{{ curr_text }}</strong></p>
+    <p><em>{{ next_text }}</em></p>
+    <br><br>
+
+    <form action="/submit" method="post">
+      <input type="hidden" name="actual_ref" value="{{ reference }}">
+      <input type="hidden" name="session_id" value="{{ session_id }}">
+      <input type="text" name="submitted_ref" placeholder="Reference"
+             style="width: 30%; font-size: 1.2em;" autofocus required>
+      <br><br>
+      <button type="submit" style="font-size: 1.2em;">Submit</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Result</title>
+</head>
+<body style="text-align:center; font-family:sans-serif; margin-top:100px;">
+
+  <script>
+    window.onload = function () {
+      const btn = document.getElementById("continue-button");
+      if (btn) btn.focus();
+    };
+  </script>
+
+  <h2>{{ "✅ Correct!" if score == 1 else "❌ Incorrect" }}</h2>
+  <p><strong>Your Answer:</strong> {{ submitted_ref }}</p>
+  <p><strong>Correct Reference:</strong> {{ actual_ref }}</p>
+
+  <form action="/continue" method="post">
+    <button id="continue-button" type="submit" style="font-size: 1.2em;">Continue</button>
+  </form>
+
+</body>
+</html>
