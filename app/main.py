@@ -9,13 +9,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from mangum import Mangum
-from pathlib import Path
 from datetime import datetime, timezone
 from uuid6 import uuid6
 from decimal import Decimal
+from math import floor
 from app.utils.bible import OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
 
 DEBUG_MODE = True
+B = 0.1
 
 def debug(msg):
     if DEBUG_MODE:
@@ -49,13 +50,14 @@ with open("translations/esv.json") as f:
     BIBLE = json.load(f)
 debug("Bible data loaded")
 
-def match_book_name(input_text):
-    input_text = input_text.strip().lower()
-    matches = [book for book in BIBLE if book.lower().startswith(input_text)]
-    match = matches[0] if len(matches) == 1 else None
-    if match:
-        debug(f"Matched {input_text} to book: {match}")
-    return match
+def convert_decimals(obj):
+    if isinstance(obj, list):
+        return [convert_decimals(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    return obj
 
 # Get random verse reference
 def get_random_reference(session_id):
@@ -73,11 +75,11 @@ def get_random_reference(session_id):
     for book in BIBLE:
         chapters = BIBLE[book]
         if book in selected_books:
-            # Use all chapters if book is fully selected
+            ## Use all chapters if book is fully selected
             for chapter_idx in range(len(chapters)):
                 eligible_references.append((book, chapter_idx))
         elif book in selected_chapters:
-            # Use only selected chapters if book is not fully selected
+            ## Use only selected chapters if book is not fully selected
             for ch in selected_chapters[book]:
                 ch = int(ch) - 1  # Convert to 0-based index
                 if 0 <= ch < len(chapters):
@@ -103,7 +105,7 @@ def get_surrounding_verses(book, chapter, verse):
     curr_verses = chapters[chapter]
     curr_verse = curr_verses[verse]
 
-    # Get previous verse
+    ## Get previous verse
     if verse > 0:
         prev_verse = curr_verses[verse - 1]
     elif chapter > 0:
@@ -112,7 +114,7 @@ def get_surrounding_verses(book, chapter, verse):
     else:
         prev_verse = ""
 
-    # Get next verse
+    ## Get next verse
     if verse < len(curr_verses) - 1:
         next_verse = curr_verses[verse + 1]
     elif chapter < len(chapters) - 1:
@@ -123,14 +125,32 @@ def get_surrounding_verses(book, chapter, verse):
 
     return prev_verse, curr_verse, next_verse
 
-def convert_decimals(obj):
-    if isinstance(obj, list):
-        return [convert_decimals(i) for i in obj]
-    elif isinstance(obj, dict):
-        return {k: convert_decimals(v) for k, v in obj.items()}
-    elif isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    return obj
+def match_book_name(input_text):
+    input_text = input_text.strip().lower()
+    matches = [book for book in BIBLE if book.lower().startswith(input_text)]
+    match = matches[0] if len(matches) == 1 else None
+    if match:
+        debug(f"Matched {input_text} to book: {match}")
+    return match
+
+def calculate_score(submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v):
+    ## Helper to convert chapter and verse to a flat verse index in the book
+    def get_flat_verse_index(book, chapter, verse):
+        idx = 0
+        for ch in range(chapter):
+            idx += len(BIBLE[book][ch])
+        return idx + verse
+
+    if submitted_book != actual_book:
+        return 0  # Different book → score 0
+
+    idx_submitted = get_flat_verse_index(submitted_book, submitted_ch, submitted_v)
+    idx_actual = get_flat_verse_index(actual_book, actual_ch, actual_v)
+    distance = abs(idx_actual - idx_submitted)
+
+    score = max(0, floor(100 - B * distance))
+    debug(f"Calculated score: {score} (distance: {distance})")
+    return score
 
 @app.get("/settings", response_class=HTMLResponse)
 def get_settings(request: Request):
@@ -229,30 +249,37 @@ def submit(
     debug(f"[POST] /submit - session_id={session_id}")
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")
 
-    # Convert chapter and verse back to integers
-    chapter = int(chapter)
-    verse = int(verse)
+    ## Convert chapter and verse back to integers
+    actual_ch = int(chapter)
+    actual_v = int(verse)
 
+    ## Parse submitted reference
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
     if not match:
         debug("❌ Invalid format")
-        return render_play(request, session_id, book, chapter, verse, error="Invalid format (e.g., Gen 1:1)")
+        return render_play(request, session_id, book, int(chapter), int(verse), error="Invalid format (e.g., Gen 1:1)")
 
-    submitted_book_raw, submitted_ch, submitted_v = match.groups()
+    submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
     matched_book = match_book_name(submitted_book_raw)
     if not matched_book:
         debug("❌ Invalid or ambiguous book")
-        return render_play(request, session_id, book, chapter, verse, error="Unknown or ambiguous book")
+        return render_play(request, session_id, book, int(chapter), int(verse), error="Unknown or ambiguous book")
 
-    normalized_submitted_ref = f"{matched_book} {int(submitted_ch)}:{int(submitted_v)}"
-    correct = normalized_submitted_ref.strip().lower() == actual_ref.strip().lower()
-    score = 1 if correct else 0
-    debug(f"Score: {score}")
+    submitted_ch = int(submitted_ch_str) - 1
+    submitted_v = int(submitted_v_str) - 1
+
+    normalized_submitted_ref = f"{matched_book} {submitted_ch + 1}:{submitted_v + 1}"
+    debug(f"Submitted: {normalized_submitted_ref}")
+    debug(f"Actual: {book} {actual_ch + 1}:{actual_v + 1}")
+
+    ## Calculate score based on verse distance
+    score = calculate_score(matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
 
     context = {
         "request": request,
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
+        "actual_text": BIBLE[book][int(chapter)][int(verse)],
         "score": score
     }
 
