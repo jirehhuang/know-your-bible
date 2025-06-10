@@ -264,13 +264,28 @@ def submit(
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
     if not match:
         debug("❌ Invalid format")
-        return render_play(request, session_id, book, actual_ch, actual_v, error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
+        return render_play(request, session_id, book, actual_ch, actual_v,
+                           error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
 
     submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
     matched_book = match_book_name(submitted_book_raw)
     if not matched_book:
         debug("❌ Invalid or ambiguous book")
-        return render_play(request, session_id, book, actual_ch, actual_v, error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
+        return render_play(request, session_id, book, actual_ch, actual_v,
+                           error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
+
+    submitted_ch = int(submitted_ch_str) - 1
+    submitted_v = int(submitted_v_str) - 1
+
+    ## Check if book, chapter, and verse exist in BIBLE
+    if (
+        matched_book not in BIBLE
+        or submitted_ch < 0 or submitted_ch >= len(BIBLE[matched_book])
+        or submitted_v < 0 or submitted_v >= len(BIBLE[matched_book][submitted_ch])
+    ):
+        debug("❌ Reference does not exist in BIBLE data")
+        return render_play(request, session_id, book, actual_ch, actual_v,
+                           error=f"Reference not found: '{matched_book} {submitted_ch + 1}:{submitted_v + 1}'.")
 
     submitted_ch = int(submitted_ch_str) - 1
     submitted_v = int(submitted_v_str) - 1
