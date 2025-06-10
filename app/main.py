@@ -228,7 +228,7 @@ def render_play(request, session_id, book, chapter, verse, error=None):
         "chapter": chapter,
         "verse": verse,
         "session_id": session_id,
-        "error": error
+        "error": error,
     }
 
     response = templates.TemplateResponse("play.html", context)
@@ -264,13 +264,13 @@ def submit(
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
     if not match:
         debug("❌ Invalid format")
-        return render_play(request, session_id, book, int(chapter), int(verse), error="Invalid format (e.g., Gen 1:1)")
+        return render_play(request, session_id, book, actual_ch, actual_v, error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
 
     submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
     matched_book = match_book_name(submitted_book_raw)
     if not matched_book:
         debug("❌ Invalid or ambiguous book")
-        return render_play(request, session_id, book, int(chapter), int(verse), error="Unknown or ambiguous book")
+        return render_play(request, session_id, book, actual_ch, actual_v, error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
 
     submitted_ch = int(submitted_ch_str) - 1
     submitted_v = int(submitted_v_str) - 1
