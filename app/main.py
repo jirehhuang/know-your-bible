@@ -52,31 +52,66 @@ debug("Bible data loaded")
 def get_random_reference(session_id):
     debug(f"Fetching settings for session_id={session_id}")
     saved = settings_table.get_item(Key={"user_id": session_id}).get("Item", {})
-    selected_books = saved.get("books", list(BIBLE.keys()))
+
+    selected_books = set(saved.get("books", []))
     selected_chapters = saved.get("chapters", {})
 
-    book = random.choice(selected_books)
-    debug(f"Random book selected: {book}")
+    debug(f"Selected books: {selected_books}")
+    debug(f"Selected chapters: {selected_chapters}")
 
-    if book in selected_chapters and selected_chapters[book]:
-        chapter = int(random.choice(selected_chapters[book]))
-        debug(f"Using selected chapters for {book}: {chapter}")
-    else:
-        chapter = random.randint(0, len(BIBLE[book]) - 1)
-        debug(f"No chapters selected for {book}, picked random: {chapter}")
+    eligible_references = []
 
-    chapter = int(chapter)
+    for book in BIBLE:
+        chapters = BIBLE[book]
+        if book in selected_books:
+            # Use all chapters if book is fully selected
+            for chapter_idx in range(len(chapters)):
+                eligible_references.append((book, chapter_idx))
+        elif book in selected_chapters:
+            # Use only selected chapters if book is not fully selected
+            for ch in selected_chapters[book]:
+                ch = int(ch) - 1  # Convert to 0-based index
+                if 0 <= ch < len(chapters):
+                    eligible_references.append((book, ch))
+                else:
+                    debug(f"⚠️ Chapter {ch} out of range for book {book}")
+
+    if not eligible_references:
+        debug("⚠️ No eligible references found, falling back to full Bible")
+        for book in BIBLE:
+            for chapter_idx in range(len(BIBLE[book])):
+                eligible_references.append((book, chapter_idx))
+
+    book, chapter = random.choice(eligible_references)
     verse = random.randint(0, len(BIBLE[book][chapter]) - 1)
-    debug(f"Random verse selected: {verse}")
 
+    debug(f"Random reference selected: {book} {chapter + 1}:{verse + 1}")
     return book, chapter, verse
 
 def get_surrounding_verses(book, chapter, verse):
-    debug(f"Getting verses: {book} {chapter + 1}:{verse + 1}")
-    verses = BIBLE[book][chapter]
-    prev_verse = verses[verse - 1] if verse > 0 else ""
-    curr_verse = verses[verse]
-    next_verse = verses[verse + 1] if verse < len(verses) - 1 else ""
+    debug(f"Getting verses surrounding: {book} {chapter + 1}:{verse + 1}")
+    chapters = BIBLE[book]
+    curr_verses = chapters[chapter]
+    curr_verse = curr_verses[verse]
+
+    # Get previous verse
+    if verse > 0:
+        prev_verse = curr_verses[verse - 1]
+    elif chapter > 0:
+        prev_chapter_verses = chapters[chapter - 1]
+        prev_verse = prev_chapter_verses[-1] if prev_chapter_verses else ""
+    else:
+        prev_verse = ""
+
+    # Get next verse
+    if verse < len(curr_verses) - 1:
+        next_verse = curr_verses[verse + 1]
+    elif chapter < len(chapters) - 1:
+        next_chapter_verses = chapters[chapter + 1]
+        next_verse = next_chapter_verses[0] if next_chapter_verses else ""
+    else:
+        next_verse = ""
+
     return prev_verse, curr_verse, next_verse
 
 def convert_decimals(obj):
