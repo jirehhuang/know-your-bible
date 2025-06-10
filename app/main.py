@@ -250,14 +250,15 @@ def submit(
     session_id: str = Form(...),
     book: str = Form(...),
     chapter: str = Form(...),
-    verse: str = Form(...)
+    verse: str = Form(...),
+    timer: float = Form(0.0)
 ):
     debug(f"[POST] /submit - session_id={session_id}")
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")
 
     ## Convert chapter and verse back to integers
-    actual_ch = int(chapter)
-    actual_v = int(verse)
+    actual_ch = int(chapter) - 1
+    actual_v = int(verse) - 1
 
     ## Parse submitted reference
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
@@ -277,6 +278,7 @@ def submit(
     normalized_submitted_ref = f"{matched_book} {submitted_ch + 1}:{submitted_v + 1}"
     debug(f"Submitted: {normalized_submitted_ref}")
     debug(f"Actual: {book} {actual_ch + 1}:{actual_v + 1}")
+    debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
     score = calculate_score(matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
@@ -285,8 +287,9 @@ def submit(
         "request": request,
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
-        "actual_text": BIBLE[book][int(chapter)][int(verse)],
-        "score": score
+        "actual_text": BIBLE[book][actual_ch][actual_v],
+        "score": score,
+        "timer": round(float(timer), 1)
     }
 
     results_table.put_item(Item={
@@ -296,6 +299,7 @@ def submit(
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
         "score": score,
+        "timer": Decimal(str(round(float(timer), 1))),
     })
     debug("✅ Result saved to DynamoDB")
 
