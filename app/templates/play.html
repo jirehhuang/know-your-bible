@@ -6,19 +6,35 @@
 <body style="text-align:center; font-family:sans-serif;">
   <div style="margin: 50px auto; max-width: 600px;">
     <p><em>{{ prev_text }}</em></p>
-    <!-- <h2>{{ curr_text }}</h2> -->
     <p><strong>{{ curr_text }}</strong></p>
     <p><em>{{ next_text }}</em></p>
     <br>
 
     <form action="/submit" method="post">
+      <!-- Hidden fields for tracking current verse state -->
       <input type="hidden" name="actual_ref" value="{{ reference }}">
       <input type="hidden" name="session_id" value="{{ session_id }}">
-      <input type="text" name="submitted_ref" placeholder="Reference"
-             style="width: 30%; font-size: 1.2em;" autofocus required>
+      <input type="hidden" name="book" value="{{ book }}">
+      <input type="hidden" name="chapter" value="{{ chapter }}">
+      <input type="hidden" name="verse" value="{{ verse }}">
+
+      <!-- User input for reference -->
+      <input
+        type="text"
+        name="submitted_ref"
+        placeholder="Reference"
+        style="width: 60%; font-size: 1.2em;"
+        autofocus
+        required
+      >
       <br><br>
+
       <button type="submit" style="font-size: 1.2em;">Submit</button>
     </form>
+
+    {% if error %}
+      <p style="color: red; margin-top: 20px;">{{ error }}</p>
+    {% endif %}
   </div>
 </body>
 </html>

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import random
 import boto3
@@ -47,6 +48,14 @@ debug("Loading Bible JSON data...")
 with open("translations/esv.json") as f:
     BIBLE = json.load(f)
 debug("Bible data loaded")
+
+def match_book_name(input_text):
+    input_text = input_text.strip().lower()
+    matches = [book for book in BIBLE if book.lower().startswith(input_text)]
+    match = matches[0] if len(matches) == 1 else None
+    if match:
+        debug(f"Matched {input_text} to book: {match}")
+    return match
 
 # Get random verse reference
 def get_random_reference(session_id):
@@ -179,14 +188,9 @@ def home(request: Request):
     debug("[GET] /")
     return templates.TemplateResponse("home.html", {"request": request})
 
-@app.get("/play", response_class=HTMLResponse)
-def play(request: Request):
-    session_id = request.cookies.get("session_id") or str(uuid6())
-    debug(f"[GET] /play - session_id={session_id}")
-    book, chapter, verse = get_random_reference(session_id)
+def render_play(request, session_id, book, chapter, verse, error=None):
     prev_text, curr_text, next_text = get_surrounding_verses(book, chapter, verse)
     reference = f"{book} {chapter + 1}:{verse + 1}"
-    debug(f"Selected reference: {reference}")
 
     context = {
         "request": request,
@@ -194,30 +198,60 @@ def play(request: Request):
         "curr_text": curr_text,
         "next_text": next_text,
         "reference": reference,
-        "session_id": session_id
+        "book": book,
+        "chapter": chapter,
+        "verse": verse,
+        "session_id": session_id,
+        "error": error
     }
 
     response = templates.TemplateResponse("play.html", context)
     response.set_cookie(key="session_id", value=session_id)
     return response
 
+@app.get("/play", response_class=HTMLResponse)
+def play(request: Request):
+    session_id = request.cookies.get("session_id") or str(uuid6())
+    debug(f"[GET] /play - session_id={session_id}")
+    book, chapter, verse = get_random_reference(session_id)
+    return render_play(request, session_id, book, chapter, verse)
+
 @app.post("/submit", response_class=HTMLResponse)
 def submit(
     request: Request,
     submitted_ref: str = Form(...),
     actual_ref: str = Form(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    book: str = Form(...),
+    chapter: str = Form(...),
+    verse: str = Form(...)
 ):
     debug(f"[POST] /submit - session_id={session_id}")
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")
 
-    correct = submitted_ref.strip().lower() == actual_ref.strip().lower()
+    # Convert chapter and verse back to integers
+    chapter = int(chapter)
+    verse = int(verse)
+
+    match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
+    if not match:
+        debug("❌ Invalid format")
+        return render_play(request, session_id, book, chapter, verse, error="Invalid format (e.g., Gen 1:1)")
+
+    submitted_book_raw, submitted_ch, submitted_v = match.groups()
+    matched_book = match_book_name(submitted_book_raw)
+    if not matched_book:
+        debug("❌ Invalid or ambiguous book")
+        return render_play(request, session_id, book, chapter, verse, error="Unknown or ambiguous book")
+
+    normalized_submitted_ref = f"{matched_book} {int(submitted_ch)}:{int(submitted_v)}"
+    correct = normalized_submitted_ref.strip().lower() == actual_ref.strip().lower()
     score = 1 if correct else 0
     debug(f"Score: {score}")
 
     context = {
         "request": request,
-        "submitted_ref": submitted_ref,
+        "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
         "score": score
     }
@@ -226,11 +260,11 @@ def submit(
         "user_id": session_id,
         "id": str(uuid6()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "submitted_ref": submitted_ref,
+        "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
         "score": score,
     })
-    debug("Result saved to DynamoDB")
+    debug("✅ Result saved to DynamoDB")
 
     return templates.TemplateResponse("result.html", context)
 
