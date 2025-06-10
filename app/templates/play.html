@@ -18,13 +18,20 @@
     <form id="answer-form" action="/submit" method="post">
       <input type="hidden" name="actual_ref" value="{{ reference }}">
       <input type="hidden" name="session_id" value="{{ session_id }}">
-      <input type="hidden" name="book" value="{{ reference.split(' ')[0] }}">
-      <input type="hidden" name="chapter" value="{{ reference.split(' ')[1].split(':')[0] }}">
-      <input type="hidden" name="verse" value="{{ reference.split(' ')[1].split(':')[1] }}">
+
+      {% set parts = reference.rsplit(' ', 1) %}
+      {% set book = parts[0] %}
+      {% set ch_verse = parts[1].split(':') %}
+      {% set chapter = ch_verse[0] %}
+      {% set verse = ch_verse[1] %}
+
+      <input type="hidden" name="book" value="{{ book }}">
+      <input type="hidden" name="chapter" value="{{ chapter }}">
+      <input type="hidden" name="verse" value="{{ verse }}">
       <input type="hidden" name="timer" id="timer" value="0">
 
       <input type="text" name="submitted_ref" placeholder="Reference"
-             style="width: 30%; font-size: 1em;" autofocus required>
+            style="width: 30%; font-size: 1em;" autofocus required>
       <br><br>
       <button type="submit" style="font-size: 1em;">Submit</button>
     </form>
