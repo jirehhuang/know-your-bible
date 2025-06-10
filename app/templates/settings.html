@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Settings</title>
+</head>
+<body style="font-family: sans-serif;">
+  <h2>Settings</h2>
+  <form method="post" action="/settings">
+    <input type="hidden" name="session_id" value="{{ session_id }}">
+
+    <h3>Old Testament</h3>
+    {% for book in ot_books %}
+      <label><input type="checkbox" name="selected_books" value="{{ book }}"
+        {% if book in selected_books %}checked{% endif %}>
+        {{ book }}</label>
+
+      {% if book in chapter_counts %}
+        <div style="margin-left:20px;">
+          {% for chapter in range(1, chapter_counts[book]+1) %}
+            <label><input type="checkbox" name="selected_chapters"
+                   value="{{ book }}|{{ chapter }}"
+                   {% if book in selected_chapters and chapter in selected_chapters[book] %}checked{% endif %}>
+              {{ chapter }}</label>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <br>
+    {% endfor %}
+
+    <h3>New Testament</h3>
+    {% for book in nt_books %}
+      <label><input type="checkbox" name="selected_books" value="{{ book }}"
+        {% if book in selected_books %}checked{% endif %}>
+        {{ book }}</label>
+
+      {% if book in chapter_counts %}
+        <div style="margin-left:20px;">
+          {% for chapter in range(1, chapter_counts[book]+1) %}
+            <label><input type="checkbox" name="selected_chapters"
+                   value="{{ book }}|{{ chapter }}"
+                   {% if book in selected_chapters and chapter in selected_chapters[book] %}checked{% endif %}>
+              {{ chapter }}</label>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <br>
+    {% endfor %}
+
+    <br>
+    <button type="submit">Save Settings</button>
+  </form>
+</body>
+</html>
