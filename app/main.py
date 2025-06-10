@@ -176,10 +176,11 @@ def get_settings(request: Request):
 def save_settings(
     request: Request,
     session_id: str = Form(...),
+    user_id: str = Form(""),  # Optional new user_id
     selected_books: list[str] = Form([]),
     selected_chapters: list[str] = Form([]),
 ):
-    debug(f"[POST] /settings - session_id={session_id}")
+    debug(f"[POST] /settings - session_id={session_id}, user_id={user_id}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
 
@@ -191,8 +192,9 @@ def save_settings(
 
     debug(f"Parsed chapter map: {chapter_map}")
 
+    final_user_id = user_id.strip() or session_id  # Use custom ID if provided
     item = {
-        "user_id": session_id,
+        "user_id": final_user_id,
         "books": selected_books,
         "ot": any(b in OT_BOOKS for b in selected_books),
         "nt": any(b in NT_BOOKS for b in selected_books),
@@ -200,8 +202,12 @@ def save_settings(
     }
 
     settings_table.put_item(Item=item)
-    debug("Settings saved to DynamoDB")
-    return RedirectResponse(url="/", status_code=303)
+    debug(f"Settings saved to DynamoDB for user_id={final_user_id}")
+
+    # Redirect to / with updated cookie if user_id was provided
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie("session_id", final_user_id)
+    return response
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):

@@ -7,8 +7,19 @@
   <h2>Settings</h2>
   <form method="post" action="/settings">
     <input type="hidden" name="session_id" value="{{ session_id }}">
+  
+    <h4>User</h4>
+    <label for="user_id">Enter a username or save your unique user ID to save your settings and history.</label><br><br>
+    <input
+      type="text"
+      name="user_id"
+      value="{{ session_id }}"
+      style="width: 30%; font-size: 1em;"
+      autofocus
+      required
+    >
 
-    <h3>Old Testament</h3>
+    <h4>Old Testament</h4>
     {% for book in ot_books %}
       <label><input type="checkbox" name="selected_books" value="{{ book }}"
         {% if book in selected_books %}checked{% endif %}>
@@ -27,7 +38,7 @@
       <br>
     {% endfor %}
 
-    <h3>New Testament</h3>
+    <h4>New Testament</h4>
     {% for book in nt_books %}
       <label><input type="checkbox" name="selected_books" value="{{ book }}"
         {% if book in selected_books %}checked{% endif %}>
