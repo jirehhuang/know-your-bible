@@ -27,8 +27,8 @@ debug("🟢 main.py is loading")
 # DynamoDB setup
 debug("Connecting to DynamoDB tables...")
 dynamodb = boto3.resource("dynamodb")
-results_table = dynamodb.Table("bible-review-results")
-settings_table = dynamodb.Table("bible-review-settings")
+results_table = dynamodb.Table("know-your-bible-results")
+settings_table = dynamodb.Table("know-your-bible-settings")
 
 # FastAPI app setup
 debug("Initializing FastAPI app...")
