@@ -8,7 +8,6 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from mangum import Mangum
 from datetime import datetime, timezone
 from uuid6 import uuid6
 from decimal import Decimal
@@ -381,7 +380,3 @@ def submit(
 def continue_game():
     debug("[POST] /continue")
     return RedirectResponse(url="/play", status_code=303)
-
-debug("Creating Mangum handler")
-handler = Mangum(app)
-debug("✅ handler created successfully")

@@ -3,7 +3,5 @@ uvicorn
 jinja2
 boto3
 uuid6
-mangum
-zappa
 python-multipart
 authlib
