@@ -158,16 +158,13 @@ def calculate_score(submitted_book, submitted_ch, submitted_v, actual_book, actu
             idx += len(BIBLE[book][ch])
         return idx + verse
 
-    if submitted_book != actual_book:
-        return 0  # Different book → score 0
-
     idx_submitted = get_flat_verse_index(submitted_book, submitted_ch, submitted_v)
     idx_actual = get_flat_verse_index(actual_book, actual_ch, actual_v)
     distance = abs(idx_actual - idx_submitted)
 
     score = max(0, floor(100 - B * distance))
     debug(f"Calculated score: {score} (distance: {distance})")
-    return score
+    return distance, score
 
 def logged_in_user(request: Request) -> bool:
     return request.cookies.get("user_id") is not None
@@ -352,7 +349,7 @@ def submit(
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
-    score = calculate_score(matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
+    distance, score = calculate_score(matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
 
     ## Write to DynamoDB if logged in
     if user_id:
@@ -361,9 +358,10 @@ def submit(
             "user_id": user_id,
             "id": str(uuid6()),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "submitted": normalized_submitted_ref,
             "reference": actual_ref,
+            "submitted": normalized_submitted_ref,
             "score": score,
+            "distance": Decimal(str(distance)),
             "timer": Decimal(str(round(float(timer), 1))),
         })
         debug("✅ Result saved to DynamoDB")
@@ -374,7 +372,7 @@ def submit(
         "actual_ref": actual_ref,
         "actual_text": BIBLE[book][actual_ch][actual_v],
         "score": score,
-        "timer": round(float(timer), 1)
+        "timer": round(float(timer), 1),
     }
 
     return templates.TemplateResponse("result.html", context)
