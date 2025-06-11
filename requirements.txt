@@ -6,3 +6,4 @@ uuid6
 mangum
 zappa
 python-multipart
+authlib

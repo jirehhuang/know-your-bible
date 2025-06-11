@@ -1,19 +1,13 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Know Your Bible</title>
-</head>
-<body style="text-align:center; font-family:sans-serif; margin-top:100px;">
+<!-- templates/home.html -->
+{% extends "base.html" %}
+
+{% block title %}Home - Know Your Bible{% endblock %}
+
+{% block content %}
   <h1>Know Your Bible</h1>
   <br>
 
   <form action="/play" method="get" style="margin-bottom: 20px;">
-    <button type="submit" style="font-size:2em;">Play</button>
+    <button type="submit">Play</button>
   </form>
-  <br>
-  
-  <form action="/settings" method="get">
-    <button type="submit" style="font-size:1.2em;">Settings</button>
-  </form>
-</body>
-</html>
+{% endblock %}

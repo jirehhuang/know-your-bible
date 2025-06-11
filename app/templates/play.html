@@ -1,16 +1,39 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Review</title>
-</head>
-<body style="text-align:center; font-family:sans-serif;">
-  <div style="margin: 50px auto; max-width: 600px;">
+{% extends "base.html" %}
+
+{% block title %}Review{% endblock %}
+
+{% block styles %}
+  <style>
+    /* Center content and limit width */
+    .play-container {
+      margin: 50px auto;
+      max-width: 600px;
+      text-align: center;
+    }
+
+    input[name="submitted_ref"] {
+      width: 30%;
+      font-size: 1em;
+    }
+
+    button {
+      font-size: 1em;
+    }
+
+    #timer_ui {
+      font-size: 1em;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="play-container">
     <p><em>{{ prev_text }}</em></p>
     <p><strong>{{ curr_text }}</strong></p>
     <p><em>{{ next_text }}</em></p>
 
     <br>
-    <div style="font-size: 1em;">
+    <div>
       ⏱️ <span id="timer_ui">00:00</span>
     </div>
     <br>
@@ -30,10 +53,9 @@
       <input type="hidden" name="verse" value="{{ verse }}">
       <input type="hidden" name="timer" id="timer" value="0">
 
-      <input type="text" name="submitted_ref" placeholder="Reference"
-            style="width: 30%; font-size: 1em;" autofocus required>
+      <input type="text" name="submitted_ref" placeholder="Reference" autofocus required>
       <br><br>
-      <button type="submit" style="font-size: 1em;">Submit</button>
+      <button type="submit">Submit</button>
     </form>
 
     {% if error %}
@@ -66,5 +88,4 @@
       updateTimer();
     });
   </script>
-</body>
-</html>
+{% endblock %}

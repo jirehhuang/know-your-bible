@@ -1,63 +1,77 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Result</title>
+{% extends "base.html" %}
+
+{% block title %}Result{% endblock %}
+
+{% block styles %}
   <style>
+    .result-container {
+      text-align: center;
+      font-family: sans-serif;
+      margin-top: 100px;
+    }
     .stars {
       font-size: 2em;
       color: gold;
       margin: 10px 0;
     }
+    button {
+      font-size: 1.2em;
+    }
   </style>
-</head>
-<body style="text-align:center; font-family:sans-serif; margin-top:100px;">
+{% endblock %}
 
+{% block content %}
+  <div class="result-container">
+
+    {% set submitted_book = submitted_ref.split()[0].lower() %}
+    {% set submitted_chapter = submitted_ref.split()[1].split(":")[0] %}
+    {% set submitted_verse = submitted_ref.split()[1].split(":")[1] %}
+
+    {% set actual_book = actual_ref.split()[0].lower() %}
+    {% set actual_chapter = actual_ref.split()[1].split(":")[0] %}
+    {% set actual_verse = actual_ref.split()[1].split(":")[1] %}
+
+    {% if submitted_book == actual_book and submitted_chapter == actual_chapter and submitted_verse == actual_verse %}
+      {% set stars = 3 %}
+    {% elif submitted_book == actual_book and submitted_chapter == actual_chapter %}
+      {% set stars = 2 %}
+    {% elif submitted_book == actual_book %}
+      {% set stars = 1 %}
+    {% else %}
+      {% set stars = 0 %}
+    {% endif %}
+
+    <div class="stars">
+      {% for i in range(stars) %}
+        &#9733;
+      {% endfor %}
+      {% for i in range(3 - stars) %}
+        &#9734;
+      {% endfor %}
+    </div>
+
+    <p><strong>Score:</strong> {{ score }}/100</p>
+    <p><strong>Timer:</strong> {{ timer }} seconds</p>
+
+    <p><strong>Your Answer:</strong> {{ submitted_ref }}</p>
+    <p><strong>Reference:</strong> {{ actual_ref }}</p>
+    <br>
+    <p>{{ actual_text }}</p>
+    <br><br>
+
+    <form action="/continue" method="post">
+      <button id="continue-button" type="submit">Continue</button>
+    </form>
+
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
   <script>
     window.onload = function () {
       const btn = document.getElementById("continue-button");
       if (btn) btn.focus();
     };
   </script>
-
-  {% set submitted_book = submitted_ref.split()[0].lower() %}
-  {% set submitted_chapter = submitted_ref.split()[1].split(":")[0] %}
-  {% set submitted_verse = submitted_ref.split()[1].split(":")[1] %}
-
-  {% set actual_book = actual_ref.split()[0].lower() %}
-  {% set actual_chapter = actual_ref.split()[1].split(":")[0] %}
-  {% set actual_verse = actual_ref.split()[1].split(":")[1] %}
-
-  {% if submitted_book == actual_book and submitted_chapter == actual_chapter and submitted_verse == actual_verse %}
-    {% set stars = 3 %}
-  {% elif submitted_book == actual_book and submitted_chapter == actual_chapter %}
-    {% set stars = 2 %}
-  {% elif submitted_book == actual_book %}
-    {% set stars = 1 %}
-  {% else %}
-    {% set stars = 0 %}
-  {% endif %}
-
-  <div class="stars">
-    {% for i in range(stars) %}
-      &#9733;
-    {% endfor %}
-    {% for i in range(3 - stars) %}
-      &#9734;
-    {% endfor %}
-  </div>
-
-  <p><strong>Score:</strong> {{ score }}/100</p>
-  <p><strong>Timer:</strong> {{ timer }} seconds</p>
-
-  <p><strong>Your Answer:</strong> {{ submitted_ref }}</p>
-  <p><strong>Reference:</strong> {{ actual_ref }}</p>
-  <br>
-  <p>{{ actual_text }}</p>
-  <br><br>
-
-  <form action="/continue" method="post">
-    <button id="continue-button" type="submit" style="font-size: 1.2em;">Continue</button>
-  </form>
-
-</body>
-</html>
+{% endblock %}

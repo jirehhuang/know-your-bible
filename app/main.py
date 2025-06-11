@@ -14,9 +14,12 @@ from uuid6 import uuid6
 from decimal import Decimal
 from math import floor
 from app.utils.bible import OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
+from authlib.integrations.starlette_client import OAuth
+from starlette.config import Config
+from starlette.middleware.sessions import SessionMiddleware
 
 DEBUG_MODE = True
-B = 0.1
+B = 0.1  # TODO: Make adjustable parameter
 
 def debug(msg):
     if DEBUG_MODE:
@@ -44,7 +47,21 @@ else:
 templates = Jinja2Templates(directory="app/templates")
 debug("Templates loaded from: app/templates")
 
-# Load Bible data
+## Set up Google login
+config = Config(".env")
+
+app.add_middleware(SessionMiddleware, secret_key="YOUR_RANDOM_SECRET")
+
+oauth = OAuth(config)
+oauth.register(
+    name='google',
+    client_id=config('GOOGLE_CLIENT_ID'),
+    client_secret=config('GOOGLE_CLIENT_SECRET'),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'},
+)
+
+## Load Bible data
 debug("Loading Bible JSON data...")
 with open("translations/esv.json") as f:
     BIBLE = json.load(f)
@@ -59,10 +76,10 @@ def convert_decimals(obj):
         return int(obj) if obj % 1 == 0 else float(obj)
     return obj
 
-# Get random verse reference
-def get_random_reference(session_id):
-    debug(f"Fetching settings for session_id={session_id}")
-    saved = settings_table.get_item(Key={"user_id": session_id}).get("Item", {})
+## Get random verse reference
+def get_random_reference(user_id):
+    debug(f"Fetching settings for user_id={user_id}")
+    saved = settings_table.get_item(Key={"user_id": user_id}).get("Item", {})
 
     selected_books = set(saved.get("books", []))
     selected_chapters = saved.get("chapters", {})
@@ -152,11 +169,51 @@ def calculate_score(submitted_book, submitted_ch, submitted_v, actual_book, actu
     debug(f"Calculated score: {score} (distance: {distance})")
     return score
 
+def logged_in_user(request: Request) -> bool:
+    return request.cookies.get("user_id") is not None
+
+def get_user_id(request: Request) -> str:
+    user_id = request.cookies.get("user_id")
+    if user_id:
+        debug(f"Authenticated user: {user_id}")
+        return user_id
+    
+    new_user_id = str(uuid6())
+    debug(f"Anonymous session: {new_user_id}")
+    return new_user_id
+
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = request.url_for('auth')
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth")
+async def auth(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+
+    # If parse_id_token fails, use userinfo endpoint
+    try:
+        user_info = await oauth.google.parse_id_token(request, token)
+    except Exception as e:
+        debug(f"parse_id_token failed: {e}")
+        user_info = await oauth.google.userinfo(token=token)
+
+    email = user_info['email']
+    response = RedirectResponse(url="/")
+    response.set_cookie("user_id", email)
+    return response
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse(url="/")
+    response.delete_cookie("user_id")
+    return response
+
 @app.get("/settings", response_class=HTMLResponse)
 def get_settings(request: Request):
-    session_id = request.cookies.get("session_id")
-    debug(f"[GET] /settings for session_id={session_id}")
-    response = settings_table.get_item(Key={"user_id": session_id})
+    user_id = get_user_id(request)
+    debug(f"[GET] /settings for user_id={user_id}")
+    response = settings_table.get_item(Key={"user_id": user_id})
     saved = convert_decimals(response.get("Item", {}))
 
     selected_books = saved.get("books", [])
@@ -164,7 +221,7 @@ def get_settings(request: Request):
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
-        "session_id": session_id,
+        "user_id": user_id,
         "ot_books": OT_BOOKS,
         "nt_books": NT_BOOKS,
         "chapter_counts": CHAPTER_COUNTS,
@@ -175,12 +232,11 @@ def get_settings(request: Request):
 @app.post("/settings", response_class=HTMLResponse)
 def save_settings(
     request: Request,
-    session_id: str = Form(...),
-    user_id: str = Form(""),  # Optional new user_id
     selected_books: list[str] = Form([]),
     selected_chapters: list[str] = Form([]),
 ):
-    debug(f"[POST] /settings - session_id={session_id}, user_id={user_id}")
+    user_id = get_user_id(request)
+    debug(f"[POST] /settings - user_id={user_id}, user_id={user_id}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
 
@@ -192,21 +248,21 @@ def save_settings(
 
     debug(f"Parsed chapter map: {chapter_map}")
 
-    final_user_id = user_id.strip() or session_id  # Use custom ID if provided
-    item = {
-        "user_id": final_user_id,
-        "books": selected_books,
-        "ot": any(b in OT_BOOKS for b in selected_books),
-        "nt": any(b in NT_BOOKS for b in selected_books),
-        "chapters": chapter_map,
-    }
+    ## Write to DynamoDB if logged in
+    if user_id:
+        item = {
+            "user_id": user_id,
+            "books": selected_books,
+            "chapters": chapter_map,
+        }
 
-    settings_table.put_item(Item=item)
-    debug(f"Settings saved to DynamoDB for user_id={final_user_id}")
+        settings_table.put_item(Item=item)
+        debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
     # Redirect to / with updated cookie if user_id was provided
     response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie("session_id", final_user_id)
+    response.set_cookie("user_id", user_id)
+
     return response
 
 @app.get("/", response_class=HTMLResponse)
@@ -214,7 +270,7 @@ def home(request: Request):
     debug("[GET] /")
     return templates.TemplateResponse("home.html", {"request": request})
 
-def render_play(request, session_id, book, chapter, verse, error=None):
+def render_play(request, user_id, book, chapter, verse, error=None):
     prev_text, curr_text, next_text = get_surrounding_verses(book, chapter, verse)
     reference = f"{book} {chapter + 1}:{verse + 1}"
 
@@ -227,33 +283,33 @@ def render_play(request, session_id, book, chapter, verse, error=None):
         "book": book,
         "chapter": chapter,
         "verse": verse,
-        "session_id": session_id,
+        "user_id": user_id,
         "error": error,
     }
 
     response = templates.TemplateResponse("play.html", context)
-    response.set_cookie(key="session_id", value=session_id)
+    response.set_cookie(key="user_id", value=user_id)
     return response
 
 @app.get("/play", response_class=HTMLResponse)
 def play(request: Request):
-    session_id = request.cookies.get("session_id") or str(uuid6())
-    debug(f"[GET] /play - session_id={session_id}")
-    book, chapter, verse = get_random_reference(session_id)
-    return render_play(request, session_id, book, chapter, verse)
+    user_id = get_user_id(request)
+    debug(f"[GET] /play - user_id={user_id}")
+    book, chapter, verse = get_random_reference(user_id)
+    return render_play(request, user_id, book, chapter, verse)
 
 @app.post("/submit", response_class=HTMLResponse)
 def submit(
     request: Request,
     submitted_ref: str = Form(...),
     actual_ref: str = Form(...),
-    session_id: str = Form(...),
     book: str = Form(...),
     chapter: str = Form(...),
     verse: str = Form(...),
     timer: float = Form(0.0)
 ):
-    debug(f"[POST] /submit - session_id={session_id}")
+    user_id = get_user_id(request)
+    debug(f"[POST] /submit - user_id={user_id}")
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")
 
     ## Convert chapter and verse back to integers
@@ -264,14 +320,14 @@ def submit(
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
     if not match:
         debug("❌ Invalid format")
-        return render_play(request, session_id, book, actual_ch, actual_v,
+        return render_play(request, user_id, book, actual_ch, actual_v,
                            error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
 
     submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
     matched_book = match_book_name(submitted_book_raw)
     if not matched_book:
         debug("❌ Invalid or ambiguous book")
-        return render_play(request, session_id, book, actual_ch, actual_v,
+        return render_play(request, user_id, book, actual_ch, actual_v,
                            error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
 
     submitted_ch = int(submitted_ch_str) - 1
@@ -284,7 +340,7 @@ def submit(
         or submitted_v < 0 or submitted_v >= len(BIBLE[matched_book][submitted_ch])
     ):
         debug("❌ Reference does not exist in BIBLE data")
-        return render_play(request, session_id, book, actual_ch, actual_v,
+        return render_play(request, user_id, book, actual_ch, actual_v,
                            error=f"Reference not found: '{matched_book} {submitted_ch + 1}:{submitted_v + 1}'.")
 
     submitted_ch = int(submitted_ch_str) - 1
@@ -298,6 +354,20 @@ def submit(
     ## Calculate score based on verse distance
     score = calculate_score(matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
 
+    ## Write to DynamoDB if logged in
+    if user_id:
+
+        results_table.put_item(Item={
+            "user_id": user_id,
+            "id": str(uuid6()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "submitted": normalized_submitted_ref,
+            "reference": actual_ref,
+            "score": score,
+            "timer": Decimal(str(round(float(timer), 1))),
+        })
+        debug("✅ Result saved to DynamoDB")
+
     context = {
         "request": request,
         "submitted_ref": normalized_submitted_ref,
@@ -306,17 +376,6 @@ def submit(
         "score": score,
         "timer": round(float(timer), 1)
     }
-
-    results_table.put_item(Item={
-        "user_id": session_id,
-        "id": str(uuid6()),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "submitted_ref": normalized_submitted_ref,
-        "actual_ref": actual_ref,
-        "score": score,
-        "timer": Decimal(str(round(float(timer), 1))),
-    })
-    debug("✅ Result saved to DynamoDB")
 
     return templates.TemplateResponse("result.html", context)
 
