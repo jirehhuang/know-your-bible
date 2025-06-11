@@ -13,13 +13,17 @@ from datetime import datetime, timezone
 from uuid6 import uuid6
 from decimal import Decimal
 from math import floor
-from app.utils.bible import OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
+from collections import defaultdict
+from app.utils.bible import OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
+
+## Global attribute store
+attr = defaultdict(dict)
 
 DEBUG_MODE = True
-B = 0.1  # TODO: Make adjustable parameter
+B = 1  # TODO: Make adjustable parameter
 
 def debug(msg):
     if DEBUG_MODE:
@@ -86,6 +90,29 @@ def convert_decimals(obj):
         return int(obj) if obj % 1 == 0 else float(obj)
     return obj
 
+def initialize_user_settings(user_id: str, default_books=None, default_chapters=None):
+    """
+    Initialize default settings and eligible_references for a new user.
+    If settings already exist in the table, does nothing.
+    """
+    default_books = default_books or []
+    default_chapters = default_chapters or {}
+
+    exists = settings_table.get_item(Key={"user_id": user_id}).get("Item")
+    if exists:
+        debug(f"Settings already exist for user_id={user_id}, skipping initialization")
+        return
+
+    item = {
+        "user_id": user_id,
+        "books": default_books,
+        "chapters": default_chapters,
+    }
+
+    settings_table.put_item(Item=item)
+    attr[user_id]["eligible_references"] = get_eligible_references(set(default_books), default_chapters)
+    debug(f"Initialized default settings and cached references for user_id={user_id}")
+
 def get_eligible_references(selected_books, selected_chapters):
     eligible_references = []
 
@@ -132,17 +159,27 @@ def weighted_sample(choices):
 
 ## Get random verse reference using weights
 def get_random_reference(user_id):
-    debug(f"Fetching settings for user_id={user_id}")
-    saved = settings_table.get_item(Key={"user_id": user_id}).get("Item", {})
+    ## Ensure attr entry exists
+    if user_id not in attr:
+        attr[user_id] = {}
 
-    selected_books = set(saved.get("books", []))
-    selected_chapters = saved.get("chapters", {})
+    ## If not cached, load settings and generate
+    if "eligible_references" not in attr[user_id]:
+        debug(f"Loading settings for user_id={user_id}")
+        response = settings_table.get_item(Key={"user_id": user_id})
+        saved = response.get("Item")
 
-    debug(f"Selected books: {selected_books}")
-    debug(f"Selected chapters: {selected_chapters}")
+        if saved:
+            selected_books = set(saved.get("books", []))
+            selected_chapters = saved.get("chapters", {})
+        else:
+            debug(f"No settings found for user_id={user_id}, initializing defaults")
+            selected_books = set()
+            selected_chapters = {}
 
-    eligible_references = get_eligible_references(selected_books, selected_chapters)
+        attr[user_id]["eligible_references"] = get_eligible_references(selected_books, selected_chapters)
 
+    eligible_references = attr[user_id]["eligible_references"]
     book, chapter, verse, weight = weighted_sample(eligible_references)
     debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
 
@@ -220,7 +257,6 @@ async def login(request: Request):
 async def auth(request: Request):
     token = await oauth.google.authorize_access_token(request)
 
-    ## If parse_id_token fails, use userinfo endpoint
     try:
         user_info = await oauth.google.parse_id_token(request, token)
     except Exception as e:
@@ -230,6 +266,10 @@ async def auth(request: Request):
     email = user_info['email']
     response = RedirectResponse(url="/")
     response.set_cookie("user_id", email)
+
+    ## Initialize user settings if not already present
+    initialize_user_settings(user_id=email)
+
     return response
 
 @app.get("/logout")
@@ -265,7 +305,7 @@ def save_settings(
     selected_chapters: list[str] = Form([]),
 ):
     user_id = get_user_id(request)
-    debug(f"[POST] /settings - user_id={user_id}, user_id={user_id}")
+    debug(f"[POST] /settings - user_id={user_id}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
 
@@ -277,21 +317,25 @@ def save_settings(
 
     debug(f"Parsed chapter map: {chapter_map}")
 
-    ## Write to DynamoDB if logged in
     if user_id:
+        ## Save new settings
         item = {
             "user_id": user_id,
             "books": selected_books,
             "chapters": chapter_map,
         }
-
         settings_table.put_item(Item=item)
-        debug(f"Settings saved to DynamoDB for user_id={user_id}")
+        debug(f"Settings saved for user_id={user_id}")
 
-    ## Redirect to / with updated cookie if user_id was provided
+        ## Ensure attr entry exists
+        if user_id not in attr:
+            attr[user_id] = {}
+
+        ## Cache new eligible references
+        attr[user_id]["eligible_references"] = get_eligible_references(set(selected_books), chapter_map)
+
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie("user_id", user_id)
-
     return response
 
 @app.get("/", response_class=HTMLResponse)
