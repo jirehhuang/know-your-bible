@@ -1,4 +1,4 @@
 .env
 /.venv
-/translations
+*.xml
 __pycache__/
