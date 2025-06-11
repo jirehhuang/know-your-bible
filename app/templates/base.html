@@ -84,7 +84,7 @@
     }
 
     .container {
-      margin-top: 80px;
+      margin-top: 120px;
       text-align: center;
       padding: 0 15px;
     }
@@ -127,7 +127,7 @@
       }
 
       button, .top-bar a {
-        font-size: 0.95em;
+        font-size: 1em;
       }
     }
   </style>
@@ -156,6 +156,24 @@
     {% block content %}{% endblock %}
   </div>
 
+  <!-- Adaptively update container margin -->
+  <script>
+    function getEmInPixels(element = document.body) {
+      return parseFloat(getComputedStyle(element).fontSize);
+    }
+    function updateContainerMargin() {
+      const topBar = document.querySelector('.top-bar');
+      const container = document.querySelector('.container');
+      const height = topBar.offsetHeight;
+      const emInPx = getEmInPixels(container);
+      container.style.marginTop = `${height + 20 + emInPx}px`;
+    }
+
+    window.addEventListener('load', updateContainerMargin);
+    window.addEventListener('resize', updateContainerMargin);
+  </script>
+
+  <!-- Toggle dark mode -->
   <script>
     const toggle = document.getElementById("darkModeToggle");
     const body = document.body;
@@ -180,6 +198,7 @@
     setTheme(savedTheme);
   </script>
 
+  <!-- Logos Reftagger for Bible references -->
   <script>
     var refTagger = {
       settings: {
