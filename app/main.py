@@ -86,7 +86,51 @@ def convert_decimals(obj):
         return int(obj) if obj % 1 == 0 else float(obj)
     return obj
 
-## Get random verse reference
+def get_eligible_references(selected_books, selected_chapters):
+    eligible_references = []
+
+    for book in BIBLE:
+        chapters = BIBLE[book]
+        if book in selected_books:
+            for chapter in chapters:
+                for verse in chapters[chapter]:
+                    weight = chapters[chapter][verse].get("weight", 1)
+                    eligible_references.append((book, chapter, verse, weight))
+        elif book in selected_chapters:
+            for ch in selected_chapters[book]:
+                ch_str = str(ch)
+                if ch_str in chapters:
+                    for verse in chapters[ch_str]:
+                        weight = chapters[ch_str][verse].get("weight", 1)
+                        eligible_references.append((book, ch_str, verse, weight))
+                else:
+                    debug(f"⚠️ Chapter {ch_str} not found in {book}")
+
+    if not eligible_references:
+        debug("⚠️ No eligible references found, falling back to full Bible")
+        for book in BIBLE:
+            for chapter in BIBLE[book]:
+                for verse in BIBLE[book][chapter]:
+                    weight = BIBLE[book][chapter][verse].get("weight", 1)
+                    eligible_references.append((book, chapter, verse, weight))
+
+    # debug(f"eligible_references: {json.dumps(eligible_references, indent=2)}")
+    
+    return eligible_references
+
+## Weighted sampling helper
+def weighted_sample(choices):
+    total_weight = sum(w for _, _, _, w in choices)
+    r = random.uniform(0, total_weight)
+    upto = 0
+    for book, ch, v, w in choices:
+        upto += w
+        if upto >= r:
+            return book, ch, v, w
+    ## Fallback to last item in case of rounding issues
+    return choices[-1]
+
+## Get random verse reference using weights
 def get_random_reference(user_id):
     debug(f"Fetching settings for user_id={user_id}")
     saved = settings_table.get_item(Key={"user_id": user_id}).get("Item", {})
@@ -97,32 +141,11 @@ def get_random_reference(user_id):
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters: {selected_chapters}")
 
-    eligible_references = []
+    eligible_references = get_eligible_references(selected_books, selected_chapters)
 
-    for book in BIBLE:
-        chapters = BIBLE[book]
-        if book in selected_books:
-            for chapter in chapters:
-                for verse in chapters[chapter]:
-                    eligible_references.append((book, chapter, verse))
-        elif book in selected_chapters:
-            for ch in selected_chapters[book]:
-                ch_str = str(ch)
-                if ch_str in chapters:
-                    for verse in chapters[ch_str]:
-                        eligible_references.append((book, ch_str, verse))
-                else:
-                    debug(f"⚠️ Chapter {ch_str} not found in {book}")
+    book, chapter, verse, weight = weighted_sample(eligible_references)
+    debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
 
-    if not eligible_references:
-        debug("⚠️ No eligible references found, falling back to full Bible")
-        for book in BIBLE:
-            for chapter in BIBLE[book]:
-                for verse in BIBLE[book][chapter]:
-                    eligible_references.append((book, chapter, verse))
-
-    book, chapter, verse = random.choice(eligible_references)
-    debug(f"Random reference selected: {book} {chapter}:{verse}")
     return book, chapter, verse
 
 def get_surrounding_verses(book, chapter, verse):
@@ -197,7 +220,7 @@ async def login(request: Request):
 async def auth(request: Request):
     token = await oauth.google.authorize_access_token(request)
 
-    # If parse_id_token fails, use userinfo endpoint
+    ## If parse_id_token fails, use userinfo endpoint
     try:
         user_info = await oauth.google.parse_id_token(request, token)
     except Exception as e:
@@ -265,7 +288,7 @@ def save_settings(
         settings_table.put_item(Item=item)
         debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
-    # Redirect to / with updated cookie if user_id was provided
+    ## Redirect to / with updated cookie if user_id was provided
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie("user_id", user_id)
 
