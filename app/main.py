@@ -102,55 +102,53 @@ def get_random_reference(user_id):
     for book in BIBLE:
         chapters = BIBLE[book]
         if book in selected_books:
-            ## Use all chapters if book is fully selected
-            for chapter_idx in range(len(chapters)):
-                eligible_references.append((book, chapter_idx))
+            for chapter in chapters:
+                for verse in chapters[chapter]:
+                    eligible_references.append((book, chapter, verse))
         elif book in selected_chapters:
-            ## Use only selected chapters if book is not fully selected
             for ch in selected_chapters[book]:
-                ch = int(ch) - 1  # Convert to 0-based index
-                if 0 <= ch < len(chapters):
-                    eligible_references.append((book, ch))
+                ch_str = str(ch)
+                if ch_str in chapters:
+                    for verse in chapters[ch_str]:
+                        eligible_references.append((book, ch_str, verse))
                 else:
-                    debug(f"⚠️ Chapter {ch} out of range for book {book}")
+                    debug(f"⚠️ Chapter {ch_str} not found in {book}")
 
     if not eligible_references:
         debug("⚠️ No eligible references found, falling back to full Bible")
         for book in BIBLE:
-            for chapter_idx in range(len(BIBLE[book])):
-                eligible_references.append((book, chapter_idx))
+            for chapter in BIBLE[book]:
+                for verse in BIBLE[book][chapter]:
+                    eligible_references.append((book, chapter, verse))
 
-    book, chapter = random.choice(eligible_references)
-    verse = random.randint(0, len(BIBLE[book][chapter]) - 1)
-
-    debug(f"Random reference selected: {book} {chapter + 1}:{verse + 1}")
+    book, chapter, verse = random.choice(eligible_references)
+    debug(f"Random reference selected: {book} {chapter}:{verse}")
     return book, chapter, verse
 
 def get_surrounding_verses(book, chapter, verse):
-    debug(f"Getting verses surrounding: {book} {chapter + 1}:{verse + 1}")
+    debug(f"Getting verses surrounding: {book} {chapter}:{verse}")
     chapters = BIBLE[book]
-    curr_verses = chapters[chapter]
-    curr_verse = curr_verses[verse]
+    chapter_keys = sorted(chapters, key=lambda k: int(k))
+    curr_verses = chapters[str(chapter)]
+    verse_keys = sorted(curr_verses, key=lambda k: int(k))
 
-    ## Get previous verse
-    if verse > 0:
-        prev_verse = curr_verses[verse - 1]
-    elif chapter > 0:
-        prev_chapter_verses = chapters[chapter - 1]
-        prev_verse = prev_chapter_verses[-1] if prev_chapter_verses else ""
-    else:
-        prev_verse = ""
+    def get_text(ch, v):
+        try:
+            return BIBLE[book][str(ch)][str(v)]["text"]
+        except KeyError:
+            return ""
 
-    ## Get next verse
-    if verse < len(curr_verses) - 1:
-        next_verse = curr_verses[verse + 1]
-    elif chapter < len(chapters) - 1:
-        next_chapter_verses = chapters[chapter + 1]
-        next_verse = next_chapter_verses[0] if next_chapter_verses else ""
-    else:
-        next_verse = ""
+    try:
+        idx = verse_keys.index(str(verse))
+    except ValueError:
+        debug("⚠️ Verse not found")
+        return "", "", ""
 
-    return prev_verse, curr_verse, next_verse
+    prev_text = get_text(chapter, int(verse_keys[idx - 1])) if idx > 0 else ""
+    next_text = get_text(chapter, int(verse_keys[idx + 1])) if idx < len(verse_keys) - 1 else ""
+
+    curr_text = get_text(chapter, verse)
+    return prev_text, curr_text, next_text
 
 def match_book_name(input_text):
     input_text = input_text.strip().lower()
@@ -161,23 +159,24 @@ def match_book_name(input_text):
     return match
 
 def calculate_score(submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v):
-    ## Helper to convert chapter and verse to a flat verse index in the book
-    def get_flat_verse_index(book, chapter, verse):
-        idx = 0
-        for ch in range(chapter):
-            idx += len(BIBLE[book][ch])
-        return idx + verse
+    def flat_index(book, chapter, verse):
+        chapters = BIBLE[book]
+        total = 0
+        for ch in sorted(chapters, key=lambda x: int(x)):
+            if int(ch) < int(chapter):
+                total += len(chapters[ch])
+            elif int(ch) == int(chapter):
+                for v in sorted(chapters[ch], key=lambda x: int(x)):
+                    if int(v) < int(verse):
+                        total += 1
+        return total
 
-    idx_submitted = get_flat_verse_index(submitted_book, submitted_ch, submitted_v)
-    idx_actual = get_flat_verse_index(actual_book, actual_ch, actual_v)
-    distance = abs(idx_actual - idx_submitted)
-
+    idx_sub = flat_index(submitted_book, submitted_ch, submitted_v)
+    idx_act = flat_index(actual_book, actual_ch, actual_v)
+    distance = abs(idx_sub - idx_act)
     score = max(0, floor(100 - B * distance))
     debug(f"Calculated score: {score} (distance: {distance})")
     return distance, score
-
-def logged_in_user(request: Request) -> bool:
-    return request.cookies.get("user_id") is not None
 
 def get_user_id(request: Request) -> str:
     user_id = request.cookies.get("user_id")
@@ -279,7 +278,7 @@ def home(request: Request):
 
 def render_review(request, user_id, book, chapter, verse, error=None):
     prev_text, curr_text, next_text = get_surrounding_verses(book, chapter, verse)
-    reference = f"{book} {chapter + 1}:{verse + 1}"
+    reference = f"{book} {chapter}:{verse}"
 
     context = {
         "request": request,
@@ -320,8 +319,8 @@ def submit(
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")
 
     ## Convert chapter and verse back to integers
-    actual_ch = int(chapter) - 1
-    actual_v = int(verse) - 1
+    actual_ch = chapter
+    actual_v = verse
 
     ## Parse submitted reference
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
@@ -337,25 +336,22 @@ def submit(
         return render_review(request, user_id, book, actual_ch, actual_v,
                            error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
 
-    submitted_ch = int(submitted_ch_str) - 1
-    submitted_v = int(submitted_v_str) - 1
+    submitted_ch = submitted_ch_str
+    submitted_v = submitted_v_str
 
     ## Check if book, chapter, and verse exist in BIBLE
     if (
         matched_book not in BIBLE
-        or submitted_ch < 0 or submitted_ch >= len(BIBLE[matched_book])
-        or submitted_v < 0 or submitted_v >= len(BIBLE[matched_book][submitted_ch])
+        or int(submitted_ch) < 1 or int(submitted_ch) > len(BIBLE[matched_book])
+        or int(submitted_v) < 1 or int(submitted_v) > len(BIBLE[matched_book][submitted_ch])
     ):
         debug("❌ Reference does not exist in BIBLE data")
         return render_review(request, user_id, book, actual_ch, actual_v,
-                           error=f"Reference not found: '{matched_book} {submitted_ch + 1}:{submitted_v + 1}'.")
+                           error=f"Reference not found: '{matched_book} {submitted_ch}:{submitted_v}'.")
 
-    submitted_ch = int(submitted_ch_str) - 1
-    submitted_v = int(submitted_v_str) - 1
-
-    normalized_submitted_ref = f"{matched_book} {submitted_ch + 1}:{submitted_v + 1}"
+    normalized_submitted_ref = f"{matched_book} {submitted_ch}:{submitted_v}"
     debug(f"Submitted: {normalized_submitted_ref}")
-    debug(f"Actual: {book} {actual_ch + 1}:{actual_v + 1}")
+    debug(f"Actual: {book} {actual_ch}:{actual_v}")
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
@@ -380,7 +376,7 @@ def submit(
         "request": request,
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
-        "actual_text": BIBLE[book][actual_ch][actual_v],
+        "actual_text": BIBLE[book][str(actual_ch)][str(actual_v)]["text"],
         "score": score,
         "timer": round(float(timer), 1),
     }

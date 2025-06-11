@@ -1,38 +1,55 @@
 from xml.etree import ElementTree as ET
 import json
-from collections import defaultdict
 import os
 
 def xml_to_json(xml_path: str) -> dict:
     """
     Convert a Bible XML file to a nested dictionary format suitable for JSON serialization.
 
+    Structure:
+    {
+      "BookName": {
+        chapter_number: {
+          verse_number: {
+            "text": "Verse text..."
+          },
+          ...
+        },
+        ...
+      },
+      ...
+    }
+
     Args:
         xml_path (str): Path to the XML file.
 
     Returns:
-        dict: A dictionary structured as {Book: [[verse, verse, ...], [verse, verse, ...], ...]}
-              where each list of lists corresponds to chapters and verses.
+        dict: Nested dictionary of books, chapters, and verses with text.
     """
     print(f"Parsing XML file: {xml_path}")
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
-    bible_dict = defaultdict(list)
+    bible_dict = {}
 
-    # Iterate over each book in the XML
     for book in root.findall("b"):
         book_name = book.attrib["n"]
         print(f"  Found book: {book_name}")
+        book_dict = {}
 
-        # Iterate over each chapter in the book
         for chapter_index, chapter in enumerate(book.findall("c"), start=1):
-            verses = []
+            chapter_dict = {}
+
             for verse_index, verse in enumerate(chapter.findall("v"), start=1):
                 text = (verse.text or "").strip()
-                verses.append(text)
-            print(f"    Processed Chapter {chapter_index} with {len(verses)} verses.")
-            bible_dict[book_name].append(verses)
+                chapter_dict[verse_index] = {
+                    "text": text,
+                }
+
+            print(f"    Processed Chapter {chapter_index} with {len(chapter_dict)} verses.")
+            book_dict[chapter_index] = chapter_dict
+
+        bible_dict[book_name] = book_dict
 
     print(f"Finished parsing: {xml_path}")
     return bible_dict
@@ -40,7 +57,7 @@ def xml_to_json(xml_path: str) -> dict:
 if __name__ == "__main__":
     print("Starting XML to JSON conversion...")
 
-    # Look through all XML files in the current directory
+    # Look through all XML files in the "translations" directory
     for filename in os.listdir("translations"):
         if filename.lower().endswith(".xml"):
             base_name = os.path.splitext(filename)[0].lower()
