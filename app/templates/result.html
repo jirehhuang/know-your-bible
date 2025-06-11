@@ -41,6 +41,10 @@
       {% set stars = 0 %}
     {% endif %}
 
+    {% set minutes = (timer // 60) | int %}
+    {% set seconds = (timer % 60) | int %}
+    {% set formatted_timer = "%02d:%02d"|format(minutes, seconds) %}
+
     <div class="stars">
       {% for i in range(stars) %}
         &#9733;
@@ -51,7 +55,7 @@
     </div>
 
     <p><strong>Score:</strong> {{ score }}/100</p>
-    <p><strong>Timer:</strong> {{ timer }} seconds</p>
+    <p><strong>Timer:</strong> {{ formatted_timer }}</p>
 
     <p><strong>Your Answer:</strong> {{ submitted_ref }}</p>
     <p><strong>Reference:</strong> {{ actual_ref }}</p>
@@ -64,7 +68,6 @@
     </form>
 
   </div>
-
 {% endblock %}
 
 {% block scripts %}
