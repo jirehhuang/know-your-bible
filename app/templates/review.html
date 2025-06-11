@@ -64,28 +64,29 @@
   </div>
 
   <script>
-    let startTime = Date.now();
+    let startTime = performance.now();  // high-resolution timer
     const timerSpan = document.getElementById("timer_ui");
     const elapsedInput = document.getElementById("timer");
 
-    function formatTime(seconds) {
+    function formatTimeDisplay(seconds) {
       const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
       const secs = String(seconds % 60).padStart(2, '0');
       return `${mins}:${secs}`;
     }
 
-    function updateTimer() {
-      const now = Date.now();
-      const seconds = Math.floor((now - startTime) / 1000);
-      timerSpan.textContent = formatTime(seconds);
-      elapsedInput.value = seconds;
+    function updateTimerUI() {
+      const now = performance.now();
+      const seconds = Math.floor((now - startTime) / 1000); // whole seconds for display
+      timerSpan.textContent = formatTimeDisplay(seconds);
     }
 
-    const intervalId = setInterval(updateTimer, 1000);
+    const intervalId = setInterval(updateTimerUI, 1000);
 
     document.getElementById("answer-form").addEventListener("submit", () => {
       clearInterval(intervalId);
-      updateTimer();
+      const now = performance.now();
+      const elapsedSeconds = (now - startTime) / 1000;  // seconds with ms precision
+      elapsedInput.value = elapsedSeconds.toFixed(3);
     });
   </script>
 {% endblock %}

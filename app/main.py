@@ -435,7 +435,7 @@ def submit(
             "submitted": normalized_submitted_ref,
             "score": score,
             "distance": Decimal(str(distance)),
-            "timer": Decimal(str(round(float(timer), 1))),
+            "timer": Decimal(str(round(float(timer), 3))),
         })
         debug("✅ Result saved to DynamoDB")
 
