@@ -3,6 +3,7 @@ import re
 import json
 import random
 import boto3
+import logging
 from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -26,13 +27,25 @@ def debug(msg):
 
 debug("🟢 main.py is loading")
 
-# DynamoDB setup
+## DynamoDB setup
+config = Config(".env")
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+try:
+    region = config("AWS_REGION")
+    dynamodb = boto3.resource("dynamodb", region_name=region)
+    logger.debug("Connected to DynamoDB.")
+except Exception as e:
+    logger.error("Failed to connect to DynamoDB", exc_info=True)
+    raise
+
 debug("Connecting to DynamoDB tables...")
-dynamodb = boto3.resource("dynamodb")
 results_table = dynamodb.Table("know-your-bible-results")
 settings_table = dynamodb.Table("know-your-bible-settings")
 
-# FastAPI app setup
+## FastAPI app setup
 debug("Initializing FastAPI app...")
 app = FastAPI()
 
@@ -47,8 +60,6 @@ templates = Jinja2Templates(directory="app/templates")
 debug("Templates loaded from: app/templates")
 
 ## Set up Google login
-config = Config(".env")
-
 app.add_middleware(SessionMiddleware, secret_key="YOUR_RANDOM_SECRET")
 
 oauth = OAuth(config)
