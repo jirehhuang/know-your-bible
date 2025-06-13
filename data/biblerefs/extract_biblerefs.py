@@ -6,7 +6,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.utils.bible import BIBLE
 from app.main import match_book_name
 
@@ -14,7 +14,7 @@ def load_sermon_urls(filepath="data/sermon_urls.txt"):
     with open(filepath, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
-def load_existing_data(filepath="data/sermon_biblerefs.json"):
+def load_existing_data(filepath="data/biblerefs/sermon_biblerefs.json"):
     if Path(filepath).exists():
         with open(filepath, "r", encoding="utf-8") as f:
             try:
@@ -69,7 +69,7 @@ skip_urls = [
     "https://www.gty.org/library/sermons-library/70-58/thinking-biblically-about-current-events-a-conversation-with-john-macarthur",
 ]
 
-def process_all_sermons(input_file="data/sermon_urls.txt", output_file="data/sermon_biblerefs.json", checkpoint_every=10):
+def process_all_sermons(input_file="data/sermon_urls.txt", output_file="data/biblerefs/sermon_biblerefs.json", checkpoint_every=10):
     urls = load_sermon_urls(input_file)
     existing_data = load_existing_data(output_file)
     new_data = {}
@@ -140,7 +140,7 @@ def normalize_and_expand_references(reference_list):
                 expanded.extend(expand_reference(book_full, chapter, verse_part))
     return expanded
 
-def get_all_references(input_file="data/sermon_biblerefs.json"):
+def get_all_references(input_file="data/biblerefs/sermon_biblerefs.json"):
     ## Load original references
     with open(input_file, "r", encoding="utf-8") as f:
         biblerefs = json.load(f)
@@ -154,7 +154,7 @@ def get_all_references(input_file="data/sermon_biblerefs.json"):
     all_refs_clean = normalize_and_expand_references(all_refs_raw)
 
     ## Save to new JSON file
-    output_path = Path("data/biblerefs.txt")
+    output_path = Path("data/biblerefs/biblerefs.txt")
     output_path.write_text("\n".join(all_refs_clean), encoding="utf-8")
 
     return all_refs_clean

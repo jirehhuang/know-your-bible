@@ -45,7 +45,7 @@ def increment_reference_counts(bible, biblerefs):
 
 # Load data
 BIBLE_PATH = Path("translations/esv.json")
-REFS_PATH = Path("data/biblerefs.txt")
+REFS_PATH = Path("data/biblerefs/biblerefs.txt")
 OUTPUT_PATH = Path("translations/esv_biblerefs.json")
 
 bible = load_json(BIBLE_PATH)

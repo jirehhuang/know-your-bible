@@ -4,7 +4,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.utils.bible import BIBLE
 
 def is_valid_ref(book, chapter, verse):
@@ -22,7 +22,7 @@ def parse_reference(ref):
     book, chapter, verse = match.groups()
     return book.strip(), chapter.strip(), verse.strip()
 
-def count_biblerefs(input_file="data/biblerefs.txt", output_file="data/biblerefs.json"):
+def count_biblerefs(input_file="data/biblerefs/biblerefs.txt", output_file="data/biblerefs/biblerefs.json"):
     input_path = Path(input_file)
     output_path = Path(output_file)
 
