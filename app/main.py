@@ -17,16 +17,16 @@ from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 from collections import defaultdict
-from app.utils.bible import OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
+from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
 
 ## Global attribute store
 attr = defaultdict(dict)
-
-DEBUG_MODE = True
+attr["DEBUG_MODE"] = True  # Global debug mode flag
+attr["BIBLE"] = get_bible_translation()
 B = 1  # TODO: Make adjustable parameter
 
 def debug(msg):
-    if DEBUG_MODE:
+    if attr.get("DEBUG_MODE", False):
         print(f"[DEBUG] {msg}")
 
 debug("🟢 main.py is loading")
@@ -75,12 +75,6 @@ oauth.register(
     client_kwargs={'scope': 'openid email profile'},
 )
 
-## Load Bible data
-debug("Loading Bible JSON data...")
-with open("translations/esv.json") as f:
-    BIBLE = json.load(f)
-debug("Bible data loaded")
-
 def convert_decimals(obj):
     if isinstance(obj, list):
         return [convert_decimals(i) for i in obj]
@@ -113,7 +107,7 @@ def initialize_user_settings(user_id: str, default_books=None, default_chapters=
     attr[user_id]["eligible_references"] = get_eligible_references(set(default_books), default_chapters)
     debug(f"Initialized default settings and cached references for user_id={user_id}")
 
-def get_eligible_references(selected_books, selected_chapters):
+    BIBLE = attr["BIBLE"]
     eligible_references = []
 
     for book in BIBLE:
@@ -187,6 +181,7 @@ def get_random_reference(user_id):
 
 def get_surrounding_verses(book, chapter, verse):
     debug(f"Getting verses surrounding: {book} {chapter}:{verse}")
+    BIBLE = attr["BIBLE"]
     chapters = BIBLE[book]
     chapter_keys = sorted(chapters, key=lambda k: int(k))
     curr_verses = chapters[str(chapter)]
@@ -211,6 +206,7 @@ def get_surrounding_verses(book, chapter, verse):
     return prev_text, curr_text, next_text
 
 def match_book_name(input_text):
+    BIBLE = attr["BIBLE"]
     input_text = input_text.strip().lower()
     matches = [book for book in BIBLE if book.lower().startswith(input_text)]
     match = matches[0] if len(matches) == 1 else None
@@ -219,6 +215,8 @@ def match_book_name(input_text):
     return match
 
 def calculate_score(submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v):
+    BIBLE = attr["BIBLE"]
+
     def flat_index(book, chapter, verse):
         chapters = BIBLE[book]
         total = 0
@@ -381,6 +379,7 @@ def submit(
     verse: str = Form(...),
     timer: float = Form(0.0)
 ):
+    BIBLE = attr["BIBLE"]
     user_id = get_user_id(request)
     debug(f"[POST] /submit - user_id={user_id}")
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")

@@ -1,9 +1,34 @@
 import json
 from pathlib import Path
 
-BIBLE_PATH = Path("translations/esv.json")
-with open(BIBLE_PATH, "r") as f:
-    BIBLE = json.load(f)
+def get_bible_translation(translation: str="esv", bool_biblerefs: bool=True) -> dict:
+    """
+    Load the specified Bible translation from the translations directory.
+    
+    Args:
+        translation (str): The translation to load, default is "esv".
+        
+    Returns:
+        dict: The loaded Bible translation.
+    """
+    bible = {}
+
+    if bool_biblerefs:
+        try:
+            translation_path = Path(f"translations/{translation.lower()}_biblerefs.json")
+            with open(translation_path, "r") as f:
+                bible = json.load(f)
+            print(f"[DEBUG] Loaded Bible with biblerefs from {translation_path}")
+        except FileNotFoundError as e:
+            print(f"[WARNING] Bible with biblerefs not found: {e}")
+
+    if not bible:
+        translation_path = Path(f"translations/{translation.lower()}.json")
+        with open(translation_path, "r") as f:
+            bible = json.load(f)
+        print(f"[DEBUG] Loaded Bible from {translation_path}")
+
+    return bible
 
 OT_BOOKS = [
     "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth",
@@ -19,6 +44,8 @@ NT_BOOKS = [
     "1 Timothy", "2 Timothy", "Titus", "Philemon", "Hebrews", "James", "1 Peter", "2 Peter",
     "1 John", "2 John", "3 John", "Jude", "Revelation"
 ]
+
+BIBLE = get_bible_translation(bool_biblerefs=False)
 
 CHAPTER_COUNTS = {book: len(chapters) for book, chapters in BIBLE.items()}
 
