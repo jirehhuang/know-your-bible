@@ -1,23 +1,24 @@
 import os
 import sys
 import json
+import re
 import nltk
 from pathlib import Path
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
-## Adjust path to import BIBLE
+# Adjust path to import BIBLE
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.utils.bible import BIBLE
 
-## Download NLTK tokenizer
+# Setup
 nltk.download("punkt", quiet=True)
 from nltk.tokenize import sent_tokenize
 
-## Constants
+# Constants
 BIBLE_BOOKS = set(BIBLE.keys())
-TEMP_HTML = 'data/biblementions/desiringgod_temp.html'
+TEMP_HTML = 'data/biblementions/temp.html'
 OUTPUT_JSON = 'data/biblementions/sentences.json'
 
 def ensure_dirs():
@@ -36,26 +37,46 @@ def save_sentences_json(data: list):
 def url_already_processed(data: list, url: str) -> bool:
     return any(entry['url'] == url for entry in data)
 
-def download_and_save_dg_article(url: str) -> str:
+def contains_bible_book(sentence: str) -> bool:
+    return any(book in sentence for book in BIBLE_BOOKS)
+
+def download_and_save_article(url: str, domain: str) -> str:
+    """
+    Download and save article HTML depending on domain logic.
+    - DG requires headful mode
+    - GTY uses networkidle wait in headless
+    """
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)  # Headful mode required for desiringgod.org
+        headless = not ("desiringgod.org" in domain)
+        browser = p.chromium.launch(headless=headless)
         page = browser.new_page()
 
-        print(f"Visiting {url}")
+        print(f"Visiting {url} ({'headless' if headless else 'headful'})")
         page.goto(url, timeout=60000)
+
+        if False and 'gty.org' in domain:
+            page.wait_for_load_state('networkidle')
 
         html = page.content()
         with open(TEMP_HTML, 'w', encoding='utf-8') as f:
             f.write(html)
+
         browser.close()
     return TEMP_HTML
 
-def extract_article_text(html_path: str) -> str:
-    """
-    Extracts and returns clean paragraph-level text from the article HTML.
-    It collects text from <p> and <a> inside <div class="resource__body">,
-    and removes line breaks within those elements.
-    """
+def normalize_text(text: str) -> str:
+    # Normalize hyphens
+    text = re.sub(r"[–—−‒―]", "-", text)
+
+    # Remove weird linebreaks and tabs
+    text = re.sub(r"[\n\r\t]", " ", text)
+
+    # Collapse multiple whitespace
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+def extract_paragraphs_from_dg(html_path: str) -> str:
     with open(html_path, 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f.read(), 'html.parser')
 
@@ -63,50 +84,71 @@ def extract_article_text(html_path: str) -> str:
     if not body:
         return ""
 
-    texts = []
+    # Extract <p> contents with inner text of children separated by spaces
+    paragraphs = []
+    for p in body.find_all('p'):
+        text_parts = [t.get_text(" ", strip=True) for t in p.contents if hasattr(t, 'get_text')]
+        paragraph_text = normalize_text(" ".join(text_parts))
+        paragraphs.append(paragraph_text)
 
-    # Extract from <p> and <a> inside resource__body
-    for tag in body.find_all(['p']):
-        text = tag.get_text(separator=" ", strip=True)
-        text = ' '.join(text.split())  # Remove all extra whitespace and line breaks
-        if text:
-            texts.append(text)
+    return " ".join(paragraphs)
 
-    print(texts)
+def extract_paragraphs_from_gty(html_path: str) -> str:
+    with open(html_path, 'r', encoding='utf-8') as f:
+        soup = BeautifulSoup(f.read(), 'html.parser')
 
-    return ' '.join(texts)
+    body = soup.find("div", attrs={"data-swiftype-name": "body", "data-swiftype-type": "text"})
+    if not body:
+        return ""
 
-def contains_bible_book(sentence: str) -> bool:
-    return any(book in sentence for book in BIBLE_BOOKS)
+    paragraphs = []
+    for p in body.find_all('p'):
+        text_parts = [t.get_text(" ", strip=True) for t in p.contents if hasattr(t, 'get_text')]
+        paragraph_text = normalize_text(" ".join(text_parts))
+        paragraphs.append(paragraph_text)
 
-def process_desiringgod_article(url: str):
+    return " ".join(paragraphs)
+
+def process_article(url: str):
     """
-    Scrapes a DesiringGod article, extracts Bible-referencing sentences,
-    and saves results to sentences.json in structured format.
+    Generalized dispatcher for processing articles from DesiringGod or GTY.
     """
     ensure_dirs()
-    existing_data = load_sentences_json()
+    data = load_sentences_json()
 
-    if url_already_processed(existing_data, url):
+    if url_already_processed(data, url):
         print(f"URL already processed: {url}")
         return
 
-    html_path = download_and_save_dg_article(url)
-    full_text = extract_article_text(html_path)
-    all_sentences = sent_tokenize(full_text)
-    bible_sentences = [s.strip() for s in all_sentences if contains_bible_book(s)]
+    domain = urlparse(url).netloc
+    html_path = download_and_save_article(url, domain)
+
+    if 'desiringgod.org' in domain:
+        article_text = extract_paragraphs_from_dg(html_path)
+    elif 'gty.org' in domain:
+        article_text = extract_paragraphs_from_gty(html_path)
+    else:
+        print(f"Unsupported domain: {domain}")
+        return
+
+    sentences = sent_tokenize(article_text)
+    bible_sentences = [s.strip() for s in sentences if contains_bible_book(s)]
 
     if bible_sentences:
-        existing_data.append({
+        data.append({
             "url": url,
             "sentences": sorted(bible_sentences)
         })
-        save_sentences_json(existing_data)
+        save_sentences_json(data)
         print(f"Added {len(bible_sentences)} sentences from {url}")
     else:
-        print(f"No Bible references found in {url}")
+        print(f"No Bible-referencing sentences found in {url}")
 
 # Example usage
 if __name__ == "__main__":
-    test_url = "https://www.desiringgod.org/articles/bring-the-bible-home-to-your-heart"
-    process_desiringgod_article(test_url)
+    test_urls = [
+        "https://www.desiringgod.org/articles/bring-the-bible-home-to-your-heart",
+        "https://www.gty.org/library/blog/B200723"
+    ]
+    for url in test_urls:
+        process_article(url)
