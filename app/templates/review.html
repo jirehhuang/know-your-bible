@@ -34,7 +34,7 @@
 
     <br>
     <div>
-      <span id="timer_ui">00:00</span>
+      <span id="timer_ui">{{ "%02d:%02d"|format(start_timer // 60, start_timer % 60) }}</span>
     </div>
     <br>
 
@@ -51,6 +51,7 @@
       <input type="hidden" name="book" value="{{ book }}">
       <input type="hidden" name="chapter" value="{{ chapter }}">
       <input type="hidden" name="verse" value="{{ verse }}">
+      <input type="hidden" name="start_timer" id="start_timer" value="{{ start_timer }}">
       <input type="hidden" name="timer" id="timer" value="0">
 
       <input type="text" name="submitted_ref" placeholder="Reference" autofocus required>
@@ -64,7 +65,7 @@
   </div>
 
   <script>
-    let startTime = performance.now();  // high-resolution timer
+    let startTime = performance.now() - parseFloat(document.getElementById("start_timer").value) * 1000;  // high-resolution timer
     const timerSpan = document.getElementById("timer_ui");
     const elapsedInput = document.getElementById("timer");
 

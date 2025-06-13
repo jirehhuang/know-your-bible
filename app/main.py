@@ -341,7 +341,7 @@ def home(request: Request):
     debug("[GET] /")
     return templates.TemplateResponse("home.html", {"request": request})
 
-def render_review(request, user_id, book, chapter, verse, error=None):
+def render_review(request, user_id, book, chapter, verse, start_timer=0, error=None):
     prev_text, curr_text, next_text = get_surrounding_verses(book, chapter, verse)
     reference = f"{book} {chapter}:{verse}"
 
@@ -354,6 +354,7 @@ def render_review(request, user_id, book, chapter, verse, error=None):
         "book": book,
         "chapter": chapter,
         "verse": verse,
+        "start_timer": start_timer,
         "user_id": user_id,
         "error": error,
     }
@@ -392,15 +393,15 @@ def submit(
     match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
     if not match:
         debug("❌ Invalid format")
-        return render_review(request, user_id, book, actual_ch, actual_v,
-                           error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
+        return render_review(request, user_id, book, actual_ch, actual_v, timer,
+                             error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
 
     submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
     matched_book = match_book_name(submitted_book_raw)
     if not matched_book:
         debug("❌ Invalid or ambiguous book")
-        return render_review(request, user_id, book, actual_ch, actual_v,
-                           error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
+        return render_review(request, user_id, book, actual_ch, actual_v, timer,
+                             error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
 
     submitted_ch = submitted_ch_str
     submitted_v = submitted_v_str
@@ -412,8 +413,8 @@ def submit(
         or int(submitted_v) < 1 or int(submitted_v) > len(BIBLE[matched_book][submitted_ch])
     ):
         debug("❌ Reference does not exist in BIBLE data")
-        return render_review(request, user_id, book, actual_ch, actual_v,
-                           error=f"Reference not found: '{matched_book} {submitted_ch}:{submitted_v}'.")
+        return render_review(request, user_id, book, actual_ch, actual_v, timer,
+                             error=f"Reference not found: '{matched_book} {submitted_ch}:{submitted_v}'.")
 
     normalized_submitted_ref = f"{matched_book} {submitted_ch}:{submitted_v}"
     debug(f"Submitted: {normalized_submitted_ref}")
