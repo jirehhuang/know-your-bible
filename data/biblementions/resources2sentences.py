@@ -8,15 +8,15 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
-# Adjust path to import BIBLE
+## Adjust path to import BIBLE
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.utils.bible import BIBLE
 
-# Setup
+## Setup
 nltk.download("punkt", quiet=True)
 from nltk.tokenize import sent_tokenize
 
-# Constants
+## Constants
 BIBLE_BOOKS = set(BIBLE.keys())
 TEMP_HTML = 'data/biblementions/temp.html'
 OUTPUT_JSON = 'data/biblementions/sentences.json'
@@ -65,13 +65,13 @@ def download_and_save_article(url: str, domain: str) -> str:
     return TEMP_HTML
 
 def normalize_text(text: str) -> str:
-    # Normalize hyphens
+    ## Normalize hyphens
     text = re.sub(r"[–—−‒―]", "-", text)
 
-    # Remove weird linebreaks and tabs
+    ## Remove weird linebreaks and tabs
     text = re.sub(r"[\n\r\t]", " ", text)
 
-    # Collapse multiple whitespace
+    ## Collapse multiple whitespace
     text = re.sub(r"\s+", " ", text)
 
     return text.strip()
@@ -84,7 +84,7 @@ def extract_paragraphs_from_dg(html_path: str) -> str:
     if not body:
         return ""
 
-    # Extract <p> contents with inner text of children separated by spaces
+    ## Extract <p> contents with inner text of children separated by spaces
     paragraphs = []
     for p in body.find_all('p'):
         text_parts = [t.get_text(" ", strip=True) for t in p.contents if hasattr(t, 'get_text')]
@@ -134,21 +134,33 @@ def process_article(url: str):
     sentences = sent_tokenize(article_text)
     bible_sentences = [s.strip() for s in sentences if contains_bible_book(s)]
 
+    ## Add even if none found, to keep track of processed URLs
+    data.append({
+        "url": url,
+        "sentences": sorted(bible_sentences)
+    })
+    save_sentences_json(data)
+
     if bible_sentences:
-        data.append({
-            "url": url,
-            "sentences": sorted(bible_sentences)
-        })
-        save_sentences_json(data)
         print(f"Added {len(bible_sentences)} sentences from {url}")
     else:
         print(f"No Bible-referencing sentences found in {url}")
 
-# Example usage
 if __name__ == "__main__":
-    test_urls = [
-        "https://www.desiringgod.org/articles/bring-the-bible-home-to-your-heart",
-        "https://www.gty.org/library/blog/B200723"
-    ]
-    for url in test_urls:
-        process_article(url)
+    url_file = "data/resource_urls.txt"
+
+    if not os.path.exists(url_file):
+        print(f"URL file not found: {url_file}")
+        sys.exit(1)
+
+    with open(url_file, "r", encoding="utf-8") as f:
+        urls = sorted(set(line.strip() for line in f if line.strip()))
+
+    print(f"Found {len(urls)} URLs to process.\n")
+
+    for idx, url in enumerate(urls, 1):
+        print(f"[{idx}/{len(urls)}] Processing: {url}")
+        try:
+            process_article(url)
+        except Exception as e:
+            print(f"❌ Error processing {url}: {e}")
