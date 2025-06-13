@@ -199,8 +199,33 @@ def get_surrounding_verses(book, chapter, verse):
         debug("⚠️ Verse not found")
         return "", "", ""
 
-    prev_text = get_text(chapter, int(verse_keys[idx - 1])) if idx > 0 else ""
-    next_text = get_text(chapter, int(verse_keys[idx + 1])) if idx < len(verse_keys) - 1 else ""
+    ## Previous verse logic
+    if idx > 0:
+        prev_text = get_text(chapter, int(verse_keys[idx - 1]))
+    else:
+        ## First verse in chapter
+        ch_idx = chapter_keys.index(str(chapter))
+        if ch_idx > 0:
+            prev_ch = chapter_keys[ch_idx - 1]
+            prev_ch_verses = chapters[prev_ch]
+            prev_verse_keys = sorted(prev_ch_verses, key=lambda k: int(k))
+            prev_text = get_text(prev_ch, prev_verse_keys[-1])
+        else:
+            prev_text = ""
+
+    ## Next verse logic
+    if idx < len(verse_keys) - 1:
+        next_text = get_text(chapter, int(verse_keys[idx + 1]))
+    else:
+        ## Last verse in chapter
+        ch_idx = chapter_keys.index(str(chapter))
+        if ch_idx < len(chapter_keys) - 1:
+            next_ch = chapter_keys[ch_idx + 1]
+            next_ch_verses = chapters[next_ch]
+            next_verse_keys = sorted(next_ch_verses, key=lambda k: int(k))
+            next_text = get_text(next_ch, next_verse_keys[0])
+        else:
+            next_text = ""
 
     curr_text = get_text(chapter, verse)
     return prev_text, curr_text, next_text
