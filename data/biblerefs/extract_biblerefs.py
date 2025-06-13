@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.utils.bible import BIBLE
 from app.main import match_book_name
 
-def load_gty_sermon_urls(filepath="data/sermon_urls.txt"):
+def load_gty_resource_urls(filepath="data/resource_urls.txt"):
     with open(filepath, "r") as f:
         return [line.strip() for line in f if line.strip() and "gty.org" in line]
 
@@ -69,8 +69,8 @@ skip_urls = [
     "https://www.gty.org/library/sermons-library/70-58/thinking-biblically-about-current-events-a-conversation-with-john-macarthur",
 ]
 
-def process_all_sermons(input_file="data/sermon_urls.txt", output_file="data/biblerefs/sermon_biblerefs.json", checkpoint_every=10):
-    urls = load_gty_sermon_urls(input_file)
+def process_all_sermons(input_file="data/resource_urls.txt", output_file="data/biblerefs/sermon_biblerefs.json", checkpoint_every=10):
+    urls = load_gty_resource_urls(input_file)
     existing_data = load_existing_data(output_file)
     new_data = {}
 
