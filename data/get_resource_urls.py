@@ -139,8 +139,8 @@ import json
 from datetime import datetime
 
 DG_URL = "https://www.desiringgod.org"
-START_YEAR = 1970
-END_YEAR = datetime.now().year
+START_YEAR = datetime.now().year
+END_YEAR = 1970
 
 RESOURCES_JSON = "data/resources_dg.json"
 URLS_TXT = "data/resource_urls.txt"
@@ -197,20 +197,23 @@ def save_and_parse_dg_year_page(year=2000, page=1, overwrite=False):
 
     ## Skip downloading if the file exists and overwrite=False
     if not overwrite and os.path.exists(filename):
-        print(f"Using cached file {filename}")
+        print(f"[DEBUG] Using cached file {filename}")
     else:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False)  # Headful mode for debugging
             page_obj = browser.new_page()
 
             url = f"{DG_URL}/dates/{year}?page={page}"
-            print(f"Visiting {url}")
+            print(f"[DEBUG] Visiting {url}")
             page_obj.goto(url, timeout=60000)
+
+            # time.sleep(5)  # Allow time for page to load; unnecessary
 
             ## Save full HTML content
             html = page_obj.content()
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(html)
+            print(f"[DEBUG] Saved HTML to {filename}")
 
             browser.close()
 
@@ -223,7 +226,10 @@ def save_and_parse_dg_year_page(year=2000, page=1, overwrite=False):
     main = soup.select_one("main.page-content") or soup
 
     results = []
-    for card in main.select("a.card__shadow"):
+    cards = main.select("a.card__shadow")
+    print(f"[DEBUG] Found {len(cards)} article cards on year={year} page={page}")
+
+    for idx, card in enumerate(cards):
         article_url = urljoin(DG_URL, card.get("href", ""))
 
         ## Extract author
@@ -238,6 +244,8 @@ def save_and_parse_dg_year_page(year=2000, page=1, overwrite=False):
         date_tag = card.select_one("time.resource__date")
         date = date_tag["datetime"] if date_tag and "datetime" in date_tag.attrs else None
 
+        print(f"[DEBUG] Card {idx+1}: url={article_url}, author={author}, scripture={scripture}, date={date}")
+
         results.append({
             "url": article_url,
             "author": author,
@@ -245,6 +253,7 @@ def save_and_parse_dg_year_page(year=2000, page=1, overwrite=False):
             "date": date
         })
 
+    print(f"[DEBUG] Returning {len(results)} articles for year={year} page={page}")
     return results
 
 def get_dg_resource_urls(overwrite=False):
@@ -257,7 +266,7 @@ def get_dg_resource_urls(overwrite=False):
     """
     resources, urls = load_existing_data()
 
-    for year in range(END_YEAR, START_YEAR - 1, -1):
+    for year in range(START_YEAR, END_YEAR - 1, -1):
         print(f"\n--- Processing year {year} ---")
         page_num = 1
         while True:
@@ -278,13 +287,13 @@ def get_dg_resource_urls(overwrite=False):
                     new_articles.append(art)
 
             if not new_articles:
-                print(f"No new articles on year {year} page {page_num}, skipping further pages for this year.")
+                print(f"No new articles out of {len(articles)} on year {year} page {page_num}, skipping further pages for this year.")
                 break
 
             resources.extend(new_articles)
             save_data(resources, urls)
 
-            print(f"Year {year} page {page_num}: Found {len(new_articles)} new articles.")
+            print(f"Year {year} page {page_num}: Found {len(new_articles)} new articles out of {len(articles)}.")
 
             page_num += 1
 
