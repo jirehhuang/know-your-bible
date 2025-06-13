@@ -20,8 +20,8 @@ def parse_reference(ref):
     book = f"{prefix} {book}" if prefix else book
     return book.strip(), chapter.strip(), verse.strip()
 
-def increment_reference_counts(bible, references):
-    for ref in references:
+def increment_reference_counts(bible, biblerefs):
+    for ref in biblerefs:
         try:
             book, chapter, verse = parse_reference(ref)
 
@@ -36,7 +36,7 @@ def increment_reference_counts(bible, references):
                 continue
 
             verse_data = bible[book][chapter][verse]
-            verse_data["references"] = verse_data.get("references", 0) + 1
+            verse_data["biblerefs"] = verse_data.get("biblerefs", 0) + 1
 
         except Exception as e:
             print(f"[Error] Failed to process {ref}: {e}")
@@ -45,15 +45,16 @@ def increment_reference_counts(bible, references):
 
 # Load data
 BIBLE_PATH = Path("translations/esv.json")
-REFS_PATH = Path("data/sermon_refs_list.json")
-OUTPUT_PATH = Path("translations/esv_references.json")
+REFS_PATH = Path("data/biblerefs.txt")
+OUTPUT_PATH = Path("translations/esv_biblerefs.json")
 
 bible = load_json(BIBLE_PATH)
-references = load_json(REFS_PATH)
+with open(REFS_PATH, "r", encoding="utf-8") as f:
+    biblerefs = [line.strip() for line in f if line.strip()]
 
 # Process
-updated_bible = increment_reference_counts(bible, references)
+updated_bible = increment_reference_counts(bible, biblerefs)
 
 # Save
 save_json(updated_bible, OUTPUT_PATH)
-print(f"\n✅ Done. Updated Bible with references saved to {OUTPUT_PATH}")
+print(f"\n✅ Done. Updated Bible with biblerefs saved to {OUTPUT_PATH}")
