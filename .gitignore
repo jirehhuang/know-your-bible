@@ -3,3 +3,5 @@
 *.xml
 __pycache__/
 desiringgod*.html
+temp*
+temp
