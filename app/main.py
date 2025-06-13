@@ -107,23 +107,28 @@ def initialize_user_settings(user_id: str, default_books=None, default_chapters=
     attr[user_id]["eligible_references"] = get_eligible_references(set(default_books), default_chapters)
     debug(f"Initialized default settings and cached references for user_id={user_id}")
 
+def get_eligible_references(selected_books, selected_chapters, upweight=["biblerefs"]):
     BIBLE = attr["BIBLE"]
     eligible_references = []
+
+    def add_verse_with_weight(book, chapter, verse):
+        weight = BIBLE[book][chapter][verse].get("weight", 1)
+        for upweight_key in upweight:
+            weight += BIBLE[book][chapter][verse].get(upweight_key, 0)
+        eligible_references.append((book, chapter, verse, weight))
 
     for book in BIBLE:
         chapters = BIBLE[book]
         if book in selected_books:
             for chapter in chapters:
                 for verse in chapters[chapter]:
-                    weight = chapters[chapter][verse].get("weight", 1)
-                    eligible_references.append((book, chapter, verse, weight))
+                    add_verse_with_weight(book, chapter, verse)
         elif book in selected_chapters:
             for ch in selected_chapters[book]:
                 ch_str = str(ch)
                 if ch_str in chapters:
                     for verse in chapters[ch_str]:
-                        weight = chapters[ch_str][verse].get("weight", 1)
-                        eligible_references.append((book, ch_str, verse, weight))
+                        add_verse_with_weight(book, ch_str, verse)
                 else:
                     debug(f"⚠️ Chapter {ch_str} not found in {book}")
 
@@ -132,8 +137,7 @@ def initialize_user_settings(user_id: str, default_books=None, default_chapters=
         for book in BIBLE:
             for chapter in BIBLE[book]:
                 for verse in BIBLE[book][chapter]:
-                    weight = BIBLE[book][chapter][verse].get("weight", 1)
-                    eligible_references.append((book, chapter, verse, weight))
+                    add_verse_with_weight(book, chapter, verse)
 
     # debug(f"eligible_references: {json.dumps(eligible_references, indent=2)}")
     
