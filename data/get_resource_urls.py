@@ -200,7 +200,7 @@ def save_and_parse_dg_year_page(year=2000, page=1, overwrite=False):
         print(f"[DEBUG] Using cached file {filename}")
     else:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=False)  # Headful mode for debugging
+            browser = p.chromium.launch(headless=False)  # Headful mode required for desiringgod.org
             page_obj = browser.new_page()
 
             url = f"{DG_URL}/dates/{year}?page={page}"
@@ -300,4 +300,4 @@ def get_dg_resource_urls(overwrite=False):
 if __name__ == "__main__":
     ## Set overwrite=True to refresh cached HTML files
     get_dg_resource_urls(overwrite=False)
-    print(f"\n✅ Total unique resources collected: {len(load_existing_data()[0])}")
+    print(f"\n✅ Total unique resources collected from desiringgod.org: {len(load_existing_data()[0])}")
