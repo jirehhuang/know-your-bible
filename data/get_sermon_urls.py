@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import time
 
-def get_sermon_urls_for_year(year):
+def get_gty_sermon_urls_for_year(year):
     base_url = "https://www.gty.org"
     archive_base = f"{base_url}/library/resources/sermons-library/date/{{page}}?year={year}"
     all_urls = []
@@ -46,27 +46,27 @@ def get_sermon_urls_for_year(year):
 
     return all_urls
 
-def get_all_sermon_urls(start_year=2024, end_year=1969):
-    all_sermon_urls = []
+def get_gty_sermon_urls(start_year=2024, end_year=1969):
+    gty_sermon_urls = []
 
     for year in range(start_year, end_year - 1, -1):  # Count down from 2024 to 1969
         print(f"\n=== Processing year {year} ===")
         try:
-            year_urls = get_sermon_urls_for_year(year)
+            year_urls = get_gty_sermon_urls_for_year(year)
             print(f"Found {len(year_urls)} sermons in {year}")
-            all_sermon_urls.extend(year_urls)
+            gty_sermon_urls.extend(year_urls)
         except Exception as e:
             print(f"[Error] Skipping year {year} due to error: {e}")
             continue  # Move on to the next year
 
-    return all_sermon_urls
+    return gty_sermon_urls
 
 ## Run it
-all_links = get_all_sermon_urls()
+gty_links = get_gty_sermon_urls()
 
 ## Optional: Save to a file
 with open("data/sermon_urls.txt", "w") as f:
-    for link in all_links:
+    for link in gty_links:
         f.write(link + "\n")
 
-print(f"\nTotal sermons collected: {len(all_links)}")
+print(f"\nTotal sermons from gty.org collected: {len(gty_links)}")

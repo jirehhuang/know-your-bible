@@ -10,9 +10,9 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.utils.bible import BIBLE
 from app.main import match_book_name
 
-def load_sermon_urls(filepath="data/sermon_urls.txt"):
+def load_gty_sermon_urls(filepath="data/sermon_urls.txt"):
     with open(filepath, "r") as f:
-        return [line.strip() for line in f if line.strip()]
+        return [line.strip() for line in f if line.strip() and "gty.org" in line]
 
 def load_existing_data(filepath="data/biblerefs/sermon_biblerefs.json"):
     if Path(filepath).exists():
@@ -70,7 +70,7 @@ skip_urls = [
 ]
 
 def process_all_sermons(input_file="data/sermon_urls.txt", output_file="data/biblerefs/sermon_biblerefs.json", checkpoint_every=10):
-    urls = load_sermon_urls(input_file)
+    urls = load_gty_sermon_urls(input_file)
     existing_data = load_existing_data(output_file)
     new_data = {}
 
