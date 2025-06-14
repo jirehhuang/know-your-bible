@@ -69,7 +69,7 @@ def extract_reference_objects(sentence: str):
     return reference_objs
 
 def compile_verse_counts(input_path: Path, output_path: Path):
-    print(f"[INFO] Compiling verse_counts.json...")
+    print(f"[INFO] Compiling nested verse_counts.json by book > chapter > verse...")
 
     with input_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
@@ -85,23 +85,41 @@ def compile_verse_counts(input_path: Path, output_path: Path):
 
         for ref_obj in references:
             for verse in ref_obj.get("verses", []):
-                if verse not in verse_counts:
-                    verse_counts[verse] = {}
-                verse_counts[verse][author] = verse_counts[verse].get(author, 0) + 1
+                try:
+                    # Expect format: "Book Chapter:Verse"
+                    book_part, verse_part = verse.rsplit(" ", 1)
+                    chapter, verse_num = verse_part.split(":")
+                    book = book_part.strip()
+                    chapter = chapter.strip()
+                    verse_num = verse_num.strip()
+                except ValueError:
+                    print(f"[WARN] Skipping malformed verse: {verse}")
+                    continue
 
-    # Add total count for each verse
-    for verse, counts in verse_counts.items():
-        total = sum(count for auth, count in counts.items() if auth != "count")
-        counts["count"] = total
+                # Initialize nested structure
+                if book not in verse_counts:
+                    verse_counts[book] = {}
+                if chapter not in verse_counts[book]:
+                    verse_counts[book][chapter] = {}
+                if verse_num not in verse_counts[book][chapter]:
+                    verse_counts[book][chapter][verse_num] = {}
+
+                # Count per author
+                verse_entry = verse_counts[book][chapter][verse_num]
+                verse_entry[author] = verse_entry.get(author, 0) + 1
+
+    # Add total count per verse
+    for book_data in verse_counts.values():
+        for chapter_data in book_data.values():
+            for verse_data in chapter_data.values():
+                total = sum(count for k, count in verse_data.items() if k != "count")
+                verse_data["count"] = total
 
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(verse_counts, f, indent=2)
 
-    print(f"[INFO] Wrote verse usage counts to {output_path}")
-    print(f"[INFO] Total unique verses: {len(verse_counts)}")
-
-    sample = dict(list(verse_counts.items())[:3])
-    print(f"[DEBUG] Sample verse counts:\n{json.dumps(sample, indent=2)}")
+    print(f"[INFO] Wrote nested verse usage counts to {output_path}")
+    print(f"[INFO] Total books: {len(verse_counts)}")
 
 
 def main():
