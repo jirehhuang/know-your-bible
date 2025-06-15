@@ -15,6 +15,15 @@ BOOK_PATTERN = r'(?:(?<=\s)|^)' + \
     r'(?P<book>' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\s*' + \
     r'(?P<ref_block>(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+)'
 
+def fix_malformed(sentence: str) -> str:
+    replacements = {
+        "Jeremiah 32:374 1": "Jeremiah 32:37-41",
+    }
+    for old, new in replacements.items():
+        sentence = sentence.replace(old, new)
+
+    return sentence
+
 def expand_verses(chapter: str, verses: str, book: str):
     refs = []
     parts = [p.strip() for p in re.split(r'[;,]', verses) if p.strip()]
@@ -86,7 +95,7 @@ def compile_verse_counts(input_path: Path, output_path: Path):
         for ref_obj in references:
             for verse in ref_obj.get("verses", []):
                 try:
-                    # Expect format: "Book Chapter:Verse"
+                    ## Expect format: "Book Chapter:Verse"
                     book_part, verse_part = verse.rsplit(" ", 1)
                     chapter, verse_num = verse_part.split(":")
                     book = book_part.strip()
@@ -96,7 +105,7 @@ def compile_verse_counts(input_path: Path, output_path: Path):
                     print(f"[WARN] Skipping malformed verse: {verse}")
                     continue
 
-                # Initialize nested structure
+                ## Initialize nested structure
                 if book not in verse_counts:
                     verse_counts[book] = {}
                 if chapter not in verse_counts[book]:
@@ -104,11 +113,11 @@ def compile_verse_counts(input_path: Path, output_path: Path):
                 if verse_num not in verse_counts[book][chapter]:
                     verse_counts[book][chapter][verse_num] = {}
 
-                # Count per author
+                ## Count per author
                 verse_entry = verse_counts[book][chapter][verse_num]
                 verse_entry[author] = verse_entry.get(author, 0) + 1
 
-    # Add total count per verse
+    ## Add total count per verse
     for book_data in verse_counts.values():
         for chapter_data in book_data.values():
             for verse_data in chapter_data.values():
@@ -133,7 +142,7 @@ def main():
     errored = 0
 
     for url, entry in data.items():
-        ## Delete "references" key if it exists
+        ## Clear any existing 'references' key
         if "references" in entry:
             del entry["references"]
 
@@ -142,19 +151,30 @@ def main():
                 skipped += 1
                 continue
 
-            if entry.get("sentences") is None:
-                entry["references"] = None
+            sentences = entry.get("sentences")
+            scripture = entry.get("scripture")
+
+            if sentences is None and not scripture:
+                entry["references"] = []
                 errored += 1
                 continue
 
-            if len(entry["sentences"]) == 0:
-                entry["references"] = []
-                continue
-
+            ## Handle sentence + scripture presence
             all_refs = []
-            scripture = [entry.get("scripture")] or []
-            sentences = entry["sentences"] + scripture
-            for sentence in sentences:
+            sentence_inputs = []
+
+            if isinstance(sentences, list):
+                sentence_inputs.extend(sentences)
+            if isinstance(scripture, str) and scripture.strip():
+                sentence_inputs.append(scripture.strip())
+
+            for sentence in sentence_inputs:
+                if not isinstance(sentence, str):
+                    continue
+                
+                ## Manually clean up sentences
+                sentence = fix_malformed(sentence)
+
                 refs = extract_reference_objects(sentence)
                 all_refs.extend(refs)
 
@@ -176,6 +196,7 @@ def main():
 
     verse_counts_path = Path("data/verse_counts.json")
     compile_verse_counts(input_path, verse_counts_path)
+
 
 if __name__ == "__main__":
     main()
