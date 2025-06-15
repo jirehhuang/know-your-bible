@@ -3,6 +3,7 @@ import sys
 import json
 import re
 import nltk
+import multiprocessing
 from pathlib import Path
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -99,7 +100,7 @@ def extract_paragraphs_from_gty(html_path: str) -> str:
 
     return " ".join(paragraphs)
 
-def process_all_resources():
+def process_all_resources(retry_empty=False):
     ensure_dirs()
 
     if not os.path.exists(RESOURCE_JSON):
@@ -109,16 +110,28 @@ def process_all_resources():
     with open(RESOURCE_JSON, 'r', encoding='utf-8') as f:
         resources = json.load(f)
 
+    save_every = 100
+    processed_since_save = 0
+
     for idx, (url, meta) in enumerate(sorted(resources.items()), 1):
         if 'sentences' in meta:
-            print(f"[{idx}] Skipping already-processed: {url}")
-            continue
+            if retry_empty and not meta['sentences']:
+                print(f"[{idx}] Retrying already-processed: {url}")
+
+                ## Delete cached HTML to retry
+                html_path = os.path.join(TEMP_URL_DIR, f"{url_to_filename(url)}.html")
+                if os.path.exists(html_path):
+                    os.remove(html_path)
+            else:
+                print(f"[{idx}] Skipping already-processed: {url}")
+                continue
 
         print(f"[{idx}] Processing: {url}")
 
-        if "www.desiringgod.org/labs" in url:
+        if "www.desiringgod.org/labs" in url or "www.desiringgod.org/light-and-truth" in url:
             print(f"[DEBUG] Skipping labs resource: {url}")
             resources[url]['sentences'] = []
+            processed_since_save += 1
             continue
 
         try:
@@ -132,6 +145,7 @@ def process_all_resources():
             else:
                 print(f"[ERROR] Unsupported domain: {domain}")
                 resources[url]['sentences'] = None
+                processed_since_save += 1
                 continue
 
             sentences = sent_tokenize(article_text)
@@ -144,9 +158,66 @@ def process_all_resources():
             print(f"❌ Error processing {url}: {e}")
             resources[url]['sentences'] = None
 
+        processed_since_save += 1
+
+        if processed_since_save >= save_every:
+            with open(RESOURCE_JSON, 'w', encoding='utf-8') as f:
+                json.dump(resources, f, ensure_ascii=False, indent=2)
+            print(f"[INFO] Saved progress after {processed_since_save} resources.")
+            processed_since_save = 0
+
+    ## Final save if any remaining
+    if processed_since_save > 0:
         with open(RESOURCE_JSON, 'w', encoding='utf-8') as f:
             json.dump(resources, f, ensure_ascii=False, indent=2)
+        print(f"[INFO] Final save of remaining {processed_since_save} resources.")
+
+def download_worker(url_domain_tuple):
+    url, domain = url_domain_tuple
+    try:
+        return download_and_save_article(url, domain)
+    except Exception as e:
+        print(f"[ERROR] Failed to download {url}: {e}")
+        return None
+
+def prerun_download_articles():
+    """
+    Pre-download all article HTMLs using all but 1 CPU core (Windows-safe).
+    """
+    ensure_dirs()
+
+    if not os.path.exists(RESOURCE_JSON):
+        print(f"[ERROR] File not found: {RESOURCE_JSON}")
+        return
+
+    with open(RESOURCE_JSON, 'r', encoding='utf-8') as f:
+        resources = json.load(f)
+
+    # Prepare (url, domain) pairs for resources that need downloading
+    jobs = []
+    for url, meta in resources.items():
+        if "sentences" in meta:
+            continue
+        if "www.desiringgod.org/labs" in url:
+            continue
+        filename = os.path.join(TEMP_URL_DIR, f"{url_to_filename(url)}.html")
+        if not os.path.exists(filename):
+            jobs.append((url, urlparse(url).netloc))
+
+    if not jobs:
+        print("[INFO] No downloads needed; all HTML files cached.")
+        return
+
+    print(f"[INFO] Downloading {len(jobs)} HTML files using parallel processing...\n")
+
+    max_workers = max(1, multiprocessing.cpu_count() - 1)
+    with multiprocessing.get_context("spawn").Pool(processes=max_workers) as pool:
+        results = pool.map(download_worker, jobs)
+
+    print(f"[INFO] Finished downloading {len(results)} articles.")
 
 
 if __name__ == "__main__":
-    process_all_resources()
+    # prerun_download_articles()
+    process_all_resources(retry_empty=False)
+    # process_all_resources(retry_empty=True)
