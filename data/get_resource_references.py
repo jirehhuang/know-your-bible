@@ -133,6 +133,10 @@ def main():
     errored = 0
 
     for url, entry in data.items():
+        ## Delete "references" key if it exists
+        if "references" in entry:
+            del entry["references"]
+
         try:
             if isinstance(entry.get("references"), list):
                 skipped += 1
@@ -148,7 +152,9 @@ def main():
                 continue
 
             all_refs = []
-            for sentence in entry["sentences"]:
+            scripture = [entry.get("scripture")] or []
+            sentences = entry["sentences"] + scripture
+            for sentence in sentences:
                 refs = extract_reference_objects(sentence)
                 all_refs.extend(refs)
 
