@@ -19,7 +19,7 @@ NT_BOOKS = [
 ]
 
 
-def get_bible_translation(translation: str = "esv", bool_counts: bool = False) -> dict:
+def get_bible_translation(translation: str = "esv", bool_counts: bool = True) -> dict:
     """
     Load the specified Bible translation, optionally with verse usage counts.
 
@@ -120,7 +120,7 @@ def add_user_data(user_data: list, bible: dict):
 
 
 ## Global load (without counts by default)
-BIBLE = get_bible_translation(bool_counts=False)
+BIBLE = get_bible_translation()
 
 CHAPTER_COUNTS = {book: len(chapters) for book, chapters in BIBLE.items()}
 BOOK_TO_TESTAMENT = {book: "OT" for book in OT_BOOKS} | {book: "NT" for book in NT_BOOKS}
