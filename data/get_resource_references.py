@@ -1,5 +1,6 @@
 import re
 import sys
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from example_cases import example_cases
@@ -64,12 +65,12 @@ def parse_verse_range(book: str, ref: str) -> List[str]:
                     start_chap_i = int(start_chap)
                     end_chap_i = int(end_chap)
                 except Exception:
-                    print(f"Warning: could not parse range numbers in {start_str}-{end_str}")
+                    print(f"[WARN] could not parse range numbers in {start_str}-{end_str}")
                     continue
 
             ## Skip if backward range
             if (start_chap_i > end_chap_i) or (start_chap_i == end_chap_i and start_verse_i > end_verse_i):
-                print(f"Warning: backward range {start_str}-{end_str} in {book} {ref}. Using only {start_str}.")
+                print(f"[WARN] backward range {start_str}-{end_str} in {book} {ref}. Using only {start_str}.")
                 if str(start_chap) in BIBLE[book] and str(start_verse) in BIBLE[book][str(start_chap)]:
                     result.append(f"{book} {start_chap}:{start_verse}")
                 continue
@@ -81,14 +82,14 @@ def parse_verse_range(book: str, ref: str) -> List[str]:
                         end_verse_i if chap == end_chap_i else max(map(int, BIBLE[book][str(chap)].keys()))
                     )
                 except KeyError:
-                    print(f"Warning: {book} {chap} not found in BIBLE")
+                    print(f"[WARN] {book} {chap} not found in BIBLE")
                     continue
 
                 for v in range(verse_start, verse_end + 1):
                     if str(chap) in BIBLE[book] and str(v) in BIBLE[book][str(chap)]:
                         result.append(f"{book} {chap}:{v}")
                     else:
-                        print(f"Warning: {book} {chap}:{v} not found")
+                        print(f"[WARN] {book} {chap}:{v} not found")
 
         else:
             chap, verse, suffix = parse_chapter_verse(part, last_chapter, book)
@@ -96,9 +97,9 @@ def parse_verse_range(book: str, ref: str) -> List[str]:
                 if str(chap) in BIBLE[book] and str(verse) in BIBLE[book][str(chap)]:
                     result.append(f"{book} {chap}:{verse}{suffix}")
                 else:
-                    print(f"Warning: {book} {chap}:{verse}{suffix} not found")
+                    print(f"[WARN] {book} {chap}:{verse}{suffix} not found")
             except Exception as e:
-                print(f"Error accessing BIBLE for {book} {chap}:{verse}{suffix}: {e}")
+                print(f"[ERROR] Error accessing BIBLE for {book} {chap}:{verse}{suffix}: {e}")
         last_chapter = chap
 
     return result
@@ -132,6 +133,8 @@ def parse_chapter_verse(ref: str, fallback_chapter=None, book=None) -> Tuple[str
     return chapter, verse_num, suffix
 
 def extract_references(sentence: str) -> List[Dict[str, Any]]:
+    print(f"[INFO] Parsing sentence: {sentence}")
+
     sentence = apply_replacements(sentence)
     book_pattern = '|'.join(sorted(BIBLE_BOOKS, key=lambda x: -len(x)))
     regex = re.compile(
@@ -146,7 +149,7 @@ def extract_references(sentence: str) -> List[Dict[str, Any]]:
         book, ref_str = match.groups()
         book = book.strip()
 
-        # Fix edge case: remove letters accidentally attached to numbers
+        ## Fix edge case: remove letters accidentally attached to numbers
         clean_ref_str = re.sub(r'([0-9]+)[a-zA-Z]', r'\1', ref_str)
 
         full_reference = f"{book} {clean_ref_str}".strip()
@@ -172,7 +175,7 @@ def test_cases(cases):
         expected = case["references"]
         actual = extract_references(case["sentence"])
 
-        # Check number of references
+        ## Check number of references
         if len(expected) != len(actual):
             print("Expected:", expected)
             print("Actual:", actual)
@@ -185,7 +188,7 @@ def test_cases(cases):
                     print("Actual:", act_ref)
                     raise AssertionError(f"Test case {i} failed!")
 
-            # Compare chapters and verses as sets
+            ## Compare chapters and verses as sets
             if set(exp_ref["chapters"]) != set(act_ref["chapters"]) or \
                set(exp_ref["verses"]) != set(act_ref["verses"]):
                 print("Expected:", exp_ref)
@@ -194,5 +197,26 @@ def test_cases(cases):
 
         print(f"✅ Test case {i} passed\n")
 
-## Execute
-test_cases(example_cases)
+def update_references_from_sentences(input_path: str):
+    with open(input_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    for url, entry in data.items():
+        all_refs = []
+        for sentence in entry.get("sentences", []) or []:
+            refs = extract_references(sentence)
+            all_refs.extend(refs)
+
+        entry["references"] = all_refs  # Overwrite or add references key
+
+    with open(input_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print(f"✅ Updated references in {input_path}")
+
+## Run tests first
+if __name__ == "__main__":
+    test_cases(example_cases)  # This will raise AssertionError if a test fails
+
+    ## If all tests passed
+    update_references_from_sentences("data/resources.json")
