@@ -13,11 +13,20 @@ BIBLE_BOOKS = set(BIBLE.keys())
 ## Match book name + chapter:verse pattern (loose spacing allowed)
 BOOK_PATTERN = r'(?:(?<=\s)|^)' + \
     r'(?P<book>' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\s*' + \
-    r'(?P<ref_block>(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+)'
+    r'(?P<ref_block>' + \
+        r'(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+' + \
+    r')(?=\s+(?:' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\b|\s*$|[^\w:])'
 
 def fix_malformed(sentence: str) -> str:
     replacements = {
         "Jeremiah 32:374 1": "Jeremiah 32:37-41",
+        "Ephesians 5:252 7": "Ephesians 5:25-27",
+        "Matthew 27:27 37": "Matthew 27:27-37",
+        "Colossians 1:212 2": "Colossians 1:21-22",
+        "Acts 20:24 21 ; 19": "Acts 20:24; 21:19",
+        "Matthew 18:8 25:42": "Matthew 18:8; 25:42",
+        "Hebrews 13:13 10:32": "Hebrews 13:13; 10:32",
+        "1 Peter 1:6 7": "1 Peter 1:6-7",
     }
     for old, new in replacements.items():
         sentence = sentence.replace(old, new)
@@ -39,11 +48,24 @@ def expand_verses(chapter: str, verses: str, book: str):
     return refs
 
 def extract_reference_objects(sentence: str):
+    matches = list(re.finditer(r'\b(' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\b', sentence))
     reference_objs = []
 
-    for match in re.finditer(BOOK_PATTERN, sentence):
-        book = match.group("book")
-        ref_block = match.group("ref_block").strip()
+    for i, match in enumerate(matches):
+        book = match.group(1)
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(sentence)
+        chunk = sentence[start:end].strip()
+
+        # Extract the reference block using the original pattern, but limited to this chunk
+        book_match = re.match(
+            r'^' + re.escape(book) + r'\s+(?P<ref_block>(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+)',
+            chunk
+        )
+        if not book_match:
+            continue
+
+        ref_block = book_match.group("ref_block").strip()
 
         chapter_groups = [v.strip() for v in ref_block.split(";") if v.strip()]
         verses = []
