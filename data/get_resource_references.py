@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from example_cases import example_cases
+from difflib import get_close_matches
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from app.utils.bible import BIBLE
@@ -28,6 +29,20 @@ def apply_replacements(sentence: str) -> str:
     ## Normalize all hyphens
     sentence = sentence.replace("–", "-").replace("—", "-").replace(" - ", "-")
     return sentence
+
+def normalize_book_name(book: str) -> str:
+    book = book.strip()
+    if book in BIBLE_BOOKS:
+        return book
+    ## Try title-case (e.g. "1 timothy" -> "1 Timothy")
+    book = " ".join(word.capitalize() for word in book.split())
+    if book in BIBLE_BOOKS:
+        return book
+    ## Fallback: use fuzzy matching
+    matches = get_close_matches(book, BIBLE_BOOKS, n=1, cutoff=0.8)
+    if matches:
+        return matches[0]
+    raise ValueError(f"Unrecognized book name: '{book}'")
 
 def get_book_and_rest(match: str) -> Tuple[str, str]:
     """Splits 'Book Chapter:Verse' string into ('Book', 'Chapter:Verse')"""
@@ -147,7 +162,7 @@ def extract_references(sentence: str) -> List[Dict[str, Any]]:
     references = []
     for match in regex.finditer(sentence):
         book, ref_str = match.groups()
-        book = book.strip()
+        book = normalize_book_name(book.strip())
 
         ## Fix edge case: remove letters accidentally attached to numbers
         clean_ref_str = re.sub(r'([0-9]+)[a-zA-Z]', r'\1', ref_str)
