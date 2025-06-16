@@ -104,10 +104,9 @@ def initialize_user_settings(user_id: str, default_books=None, default_chapters=
     }
 
     settings_table.put_item(Item=item)
-    attr[user_id]["eligible_references"] = get_eligible_references(set(default_books), default_chapters)
-    debug(f"Initialized default settings and cached references for user_id={user_id}")
+    debug(f"Initialized default settings for user_id={user_id}")
 
-def get_eligible_references(selected_books, selected_chapters, upweight=["biblerefs"]):
+def get_eligible_references(selected_books, selected_chapters, upweight=["John MacArthur", "John Piper"]):
     BIBLE = attr["BIBLE"]
     eligible_references = []
 
@@ -331,6 +330,7 @@ def save_settings(
     selected_books: list[str] = Form([]),
     selected_chapters: list[str] = Form([]),
 ):
+    global attr
     user_id = get_user_id(request)
     debug(f"[POST] /settings - user_id={user_id}")
     debug(f"Selected books: {selected_books}")
@@ -357,6 +357,12 @@ def save_settings(
         ## Ensure attr entry exists
         if user_id not in attr:
             attr[user_id] = {}
+
+        ## Retrieve preferred Bible translation
+        ## TODO:
+        attr["BIBLE"] = get_bible_translation(translation="esv", bool_counts=True)
+
+        ## TODO: Add user data to Bible
 
         ## Cache new eligible references
         attr[user_id]["eligible_references"] = get_eligible_references(set(selected_books), chapter_map)
