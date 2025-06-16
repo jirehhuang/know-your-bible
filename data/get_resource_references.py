@@ -42,9 +42,20 @@ def expand_verses(chapter: str, verses: str, book: str):
                 start, end = map(int, part.split('-'))
                 refs.extend([f"{book} {chapter}:{v}" for v in range(start, end + 1)])
             except ValueError:
+                try:
+                    # Salvage valid start if present
+                    start = int(part.split('-')[0])
+                    refs.append(f"{book} {chapter}:{start}")
+                    print(f"[WARN] Incomplete range in '{book} {chapter}:{part}', salvaged {start}")
+                except ValueError:
+                    print(f"[WARN] Malformed range in '{book} {chapter}:{part}', skipped")
                 continue
         else:
-            refs.append(f"{book} {chapter}:{part}")
+            try:
+                v = int(part)
+                refs.append(f"{book} {chapter}:{v}")
+            except ValueError:
+                print(f"[WARN] Malformed verse '{book} {chapter}:{part}', skipped")
     return refs
 
 def extract_reference_objects(sentence: str):
@@ -57,7 +68,7 @@ def extract_reference_objects(sentence: str):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(sentence)
         chunk = sentence[start:end].strip()
 
-        ## Extract the reference block using the original pattern, but limited to this chunk
+        # Extract the reference block using the original pattern, but limited to this chunk
         book_match = re.match(
             r'^' + re.escape(book) + r'\s+(?P<ref_block>(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+)',
             chunk
@@ -66,7 +77,6 @@ def extract_reference_objects(sentence: str):
             continue
 
         ref_block = book_match.group("ref_block").strip()
-
         chapter_groups = [v.strip() for v in ref_block.split(";") if v.strip()]
         verses = []
         chapters = set()
@@ -90,32 +100,30 @@ def extract_reference_objects(sentence: str):
                 print(f"[WARN] Skipping malformed group (no chapter context): {book} {group}")
                 continue
 
-            ## Try expanding verses; skip only bad entries
+            # Expand verse parts, handling trailing junk
             expanded = []
-            for vp in re.split(r'[;,]', verse_part):
+            for vp in re.split(r'[,\s]+', verse_part):
                 vp = vp.strip()
                 if not vp:
                     continue
-                try:
-                    if '-' in vp:
+                if '-' in vp:
+                    try:
+                        start, end = map(int, vp.split('-'))
+                        expanded.extend([f"{book} {current_chapter}:{v}" for v in range(start, end + 1)])
+                    except ValueError:
                         try:
-                            start, end = map(int, vp.split('-'))
-                            expanded.extend([f"{book} {current_chapter}:{v}" for v in range(start, end + 1)])
+                            start = int(vp.split('-')[0])
+                            expanded.append(f"{book} {current_chapter}:{start}")
+                            print(f"[WARN] Incomplete range in '{book} {original_group}': salvaged {start}")
                         except ValueError:
-                            ## Try to extract the valid number before dash
-                            try:
-                                start = int(vp.split('-')[0])
-                                expanded.append(f"{book} {current_chapter}:{start}")
-                                print(f"[WARN] Incomplete range in '{book} {original_group}': salvaged {start}")
-                            except ValueError:
-                                print(f"[WARN] Malformed range in '{book} {original_group}': {vp}")
-                            continue
-                    else:
+                            print(f"[WARN] Malformed range in '{book} {original_group}': {vp}")
+                        continue
+                else:
+                    try:
                         v = int(vp)
                         expanded.append(f"{book} {current_chapter}:{v}")
-                except ValueError:
-                    print(f"[WARN] Skipping malformed verse segment in '{book} {original_group}': {vp}")
-                    continue
+                    except ValueError:
+                        print(f"[WARN] Skipping malformed verse segment in '{book} {original_group}': {vp}")
 
             if not expanded:
                 print(f"[WARN] All parts malformed in '{book} {original_group}', skipping.")
@@ -185,7 +193,6 @@ def compile_verse_counts(input_path: Path, output_path: Path):
 
     print(f"[INFO] Wrote nested verse usage counts to {output_path}")
     print(f"[INFO] Total books: {len(verse_counts)}")
-
 
 def main():
     input_path = Path("data/resources.json")
