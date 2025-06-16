@@ -80,7 +80,8 @@ def parse_verse_range(book: str, ref: str) -> List[str]:
                     start_chap_i = int(start_chap)
                     end_chap_i = int(end_chap)
                 except Exception:
-                    print(f"[WARN] could not parse range numbers in {start_str}-{end_str}")
+                    if ":" in start_str or ":" in end_str:
+                        print(f"[WARN] could not parse range numbers in {start_str}-{end_str}")
                     continue
 
             ## Skip if backward range
@@ -104,7 +105,8 @@ def parse_verse_range(book: str, ref: str) -> List[str]:
                     if str(chap) in BIBLE[book] and str(v) in BIBLE[book][str(chap)]:
                         result.append(f"{book} {chap}:{v}")
                     else:
-                        print(f"[WARN] {book} {chap}:{v} not found")
+                        if chap not in [None, "None"] and v not in [None, "None"]:
+                            print(f"[WARN] {book} {chap}:{v} not found")
 
         else:
             chap, verse, suffix = parse_chapter_verse(part, last_chapter, book)
@@ -112,7 +114,8 @@ def parse_verse_range(book: str, ref: str) -> List[str]:
                 if str(chap) in BIBLE[book] and str(verse) in BIBLE[book][str(chap)]:
                     result.append(f"{book} {chap}:{verse}{suffix}")
                 else:
-                    print(f"[WARN] {book} {chap}:{verse}{suffix} not found")
+                    if chap not in [None, "None"] and verse not in [None, "None"]:
+                        print(f"[WARN] {book} {chap}:{verse}{suffix} not found")
             except Exception as e:
                 print(f"[ERROR] Error accessing BIBLE for {book} {chap}:{verse}{suffix}: {e}")
         last_chapter = chap
@@ -148,7 +151,7 @@ def parse_chapter_verse(ref: str, fallback_chapter=None, book=None) -> Tuple[str
     return chapter, verse_num, suffix
 
 def extract_references(sentence: str) -> List[Dict[str, Any]]:
-    print(f"[INFO] Parsing sentence: {sentence}")
+    # print(f"[INFO] parsing sentence: {sentence}")
 
     sentence = apply_replacements(sentence)
     book_pattern = '|'.join(sorted(BIBLE_BOOKS, key=lambda x: -len(x)))
@@ -229,9 +232,67 @@ def update_references_from_sentences(input_path: str):
 
     print(f"✅ Updated references in {input_path}")
 
+def compile_verse_counts(input_path: Path, output_path: Path):
+    print(f"[INFO] Compiling nested verse_counts.json by book > chapter > verse...")
+
+    with input_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    verse_counts = {}
+
+    for url, entry in data.items():
+        author = entry.get("author", "Unknown")
+        references = entry.get("references")
+
+        if not isinstance(references, list):
+            continue
+
+        for ref_obj in references:
+            for verse in ref_obj.get("verses", []):
+                try:
+                    ## Expect format: "Book Chapter:Verse"
+                    book_part, verse_part = verse.rsplit(" ", 1)
+                    chapter, verse_num = verse_part.split(":")
+                    book = book_part.strip()
+                    chapter = chapter.strip()
+                    verse_num = verse_num.strip()
+                except ValueError:
+                    print(f"[WARN] Skipping malformed verse: {verse}")
+                    continue
+
+                ## Initialize nested structure
+                if book not in verse_counts:
+                    verse_counts[book] = {}
+                if chapter not in verse_counts[book]:
+                    verse_counts[book][chapter] = {}
+                if verse_num not in verse_counts[book][chapter]:
+                    verse_counts[book][chapter][verse_num] = {}
+
+                ## Count per author
+                verse_entry = verse_counts[book][chapter][verse_num]
+                verse_entry[author] = verse_entry.get(author, 0) + 1
+
+    ## Add total count per verse
+    for book_data in verse_counts.values():
+        for chapter_data in book_data.values():
+            for verse_data in chapter_data.values():
+                total = sum(count for k, count in verse_data.items() if k != "count")
+                verse_data["count"] = total
+
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(verse_counts, f, indent=2)
+
+    print(f"[INFO] Wrote nested verse usage counts to {output_path}")
+    print(f"[INFO] Total books: {len(verse_counts)}")
+
+
 ## Run tests first
 if __name__ == "__main__":
     test_cases(example_cases)  # This will raise AssertionError if a test fails
 
     ## If all tests passed
-    update_references_from_sentences("data/resources.json")
+    resources_path = Path("data/resources.json")
+    update_references_from_sentences(resources_path)
+
+    verse_counts_path = Path("data/verse_counts.json")
+    compile_verse_counts(resources_path, verse_counts_path)
