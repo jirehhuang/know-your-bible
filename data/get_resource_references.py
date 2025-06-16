@@ -1,269 +1,184 @@
-import sys
-import json
 import re
+import sys
 from pathlib import Path
-from collections import defaultdict
+from typing import List, Dict, Any, Tuple
+from example_cases import example_cases
 
-## Adjust path to import BIBLE
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from app.utils.bible import BIBLE
 
 BIBLE_BOOKS = set(BIBLE.keys())
 
-## Match book name + chapter:verse pattern (loose spacing allowed)
-BOOK_PATTERN = r'(?:(?<=\s)|^)' + \
-    r'(?P<book>' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\s*' + \
-    r'(?P<ref_block>' + \
-        r'(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+' + \
-    r')(?=\s+(?:' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\b|\s*$|[^\w:])'
+## Default replacement corrections
+replacements = {
+    "Jeremiah 32:374 1": "Jeremiah 32:37-41",
+    "Ephesians 5:252 7": "Ephesians 5:25-27",
+    "Matthew 27:27 37": "Matthew 27:27-37",
+    "Colossians 1:212 2": "Colossians 1:21-22",
+    "Acts 20:24 21 ; 19": "Acts 20:24; 21:19",
+    "Matthew 18:8 25:42": "Matthew 18:8; 25:42",
+    "Hebrews 13:13 10:32": "Hebrews 13:13; 10:32",
+    "1 Peter 1:6 7": "1 Peter 1:6-7",
+}
 
-def fix_malformed(sentence: str) -> str:
-    replacements = {
-        "Jeremiah 32:374 1": "Jeremiah 32:37-41",
-        "Ephesians 5:252 7": "Ephesians 5:25-27",
-        "Matthew 27:27 37": "Matthew 27:27-37",
-        "Colossians 1:212 2": "Colossians 1:21-22",
-        "Acts 20:24 21 ; 19": "Acts 20:24; 21:19",
-        "Matthew 18:8 25:42": "Matthew 18:8; 25:42",
-        "Hebrews 13:13 10:32": "Hebrews 13:13; 10:32",
-        "1 Peter 1:6 7": "1 Peter 1:6-7",
-    }
-    for old, new in replacements.items():
-        sentence = sentence.replace(old, new)
-
+def apply_replacements(sentence: str) -> str:
+    for wrong, correct in replacements.items():
+        sentence = sentence.replace(wrong, correct)
+    ## Normalize all hyphens
+    sentence = sentence.replace("–", "-")
     return sentence
 
-def expand_verses(chapter: str, verses: str, book: str):
-    refs = []
-    parts = [p.strip() for p in re.split(r'[;,]', verses) if p.strip()]
+def get_book_and_rest(match: str) -> Tuple[str, str]:
+    """Splits 'Book Chapter:Verse' string into ('Book', 'Chapter:Verse')"""
+    tokens = match.strip().split()
+    for i in range(len(tokens), 0, -1):
+        book_candidate = ' '.join(tokens[:i])
+        if book_candidate in BIBLE_BOOKS:
+            return book_candidate, ' '.join(tokens[i:])
+    return '', match  # Shouldn't happen if regex is good
+
+def parse_verse_range(book: str, ref: str) -> List[str]:
+    result = []
+    parts = [s.strip() for s in re.split(r'[;,]', ref)]
+    last_chapter = None
+
     for part in parts:
+        if not part:
+            continue
+
         if '-' in part:
+            start_str, end_str = map(str.strip, part.split('-', 1))
+
+            start_chap, start_verse, start_suffix = parse_chapter_verse(start_str, last_chapter, book)
+            end_chap, end_verse, end_suffix = parse_chapter_verse(end_str, start_chap, book)
+
             try:
-                start, end = map(int, part.split('-'))
-                refs.extend([f"{book} {chapter}:{v}" for v in range(start, end + 1)])
+                start_chap_i = int(start_chap)
+                start_verse_i = int(start_verse)
+                end_chap_i = int(end_chap)
+                end_verse_i = int(end_verse)
             except ValueError:
                 try:
-                    # Salvage valid start if present
-                    start = int(part.split('-')[0])
-                    refs.append(f"{book} {chapter}:{start}")
-                    print(f"[WARN] Incomplete range in '{book} {chapter}:{part}', salvaged {start}")
-                except ValueError:
-                    print(f"[WARN] Malformed range in '{book} {chapter}:{part}', skipped")
+                    start_verse_i = int(re.match(r'(\d+)', start_verse).group(1))
+                    end_verse_i = int(re.match(r'(\d+)', end_verse).group(1))
+                    start_chap_i = int(start_chap)
+                    end_chap_i = int(end_chap)
+                except Exception:
+                    print(f"Warning: could not parse range numbers in {start_str}-{end_str}")
+                    continue
+
+            ## Skip if backward range
+            if (start_chap_i > end_chap_i) or (start_chap_i == end_chap_i and start_verse_i > end_verse_i):
+                print(f"Warning: backward range {start_str}-{end_str} in {book} {ref}. Using only {start_str}.")
+                if str(start_chap) in BIBLE[book] and str(start_verse) in BIBLE[book][str(start_chap)]:
+                    result.append(f"{book} {start_chap}:{start_verse}")
                 continue
+
+            for chap in range(start_chap_i, end_chap_i + 1):
+                verse_start = start_verse_i if chap == start_chap_i else 1
+                try:
+                    verse_end = (
+                        end_verse_i if chap == end_chap_i else max(map(int, BIBLE[book][str(chap)].keys()))
+                    )
+                except KeyError:
+                    print(f"Warning: {book} {chap} not found in BIBLE")
+                    continue
+
+                for v in range(verse_start, verse_end + 1):
+                    if str(chap) in BIBLE[book] and str(v) in BIBLE[book][str(chap)]:
+                        result.append(f"{book} {chap}:{v}")
+                    else:
+                        print(f"Warning: {book} {chap}:{v} not found")
+
         else:
+            chap, verse, suffix = parse_chapter_verse(part, last_chapter, book)
             try:
-                v = int(part)
-                refs.append(f"{book} {chapter}:{v}")
-            except ValueError:
-                print(f"[WARN] Malformed verse '{book} {chapter}:{part}', skipped")
-    return refs
-
-def extract_reference_objects(sentence: str):
-    matches = list(re.finditer(r'\b(' + '|'.join(re.escape(book) for book in BIBLE_BOOKS) + r')\b', sentence))
-    reference_objs = []
-
-    for i, match in enumerate(matches):
-        book = match.group(1)
-        start = match.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(sentence)
-        chunk = sentence[start:end].strip()
-
-        # Extract the reference block using the original pattern, but limited to this chunk
-        book_match = re.match(
-            r'^' + re.escape(book) + r'\s+(?P<ref_block>(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+)',
-            chunk
-        )
-        if not book_match:
-            continue
-
-        ref_block = book_match.group("ref_block").strip()
-        chapter_groups = [v.strip() for v in ref_block.split(";") if v.strip()]
-        verses = []
-        chapters = set()
-        current_chapter = None
-
-        for group in chapter_groups:
-            original_group = group  # Save for warning messages
-
-            if ":" in group:
-                parts = group.split(":")
-                if len(parts) == 2:
-                    chapter, verse_part = parts
-                    current_chapter = chapter.strip()
-                    verse_part = verse_part.strip()
+                if str(chap) in BIBLE[book] and str(verse) in BIBLE[book][str(chap)]:
+                    result.append(f"{book} {chap}:{verse}{suffix}")
                 else:
-                    print(f"[WARN] Skipping malformed group (too many colons): {book} {group}")
-                    continue
-            elif current_chapter:
-                verse_part = group.strip()
-            else:
-                print(f"[WARN] Skipping malformed group (no chapter context): {book} {group}")
-                continue
+                    print(f"Warning: {book} {chap}:{verse}{suffix} not found")
+            except Exception as e:
+                print(f"Error accessing BIBLE for {book} {chap}:{verse}{suffix}: {e}")
+        last_chapter = chap
 
-            # Expand verse parts, handling trailing junk
-            expanded = []
-            for vp in re.split(r'[,\s]+', verse_part):
-                vp = vp.strip()
-                if not vp:
-                    continue
-                if '-' in vp:
-                    try:
-                        start, end = map(int, vp.split('-'))
-                        expanded.extend([f"{book} {current_chapter}:{v}" for v in range(start, end + 1)])
-                    except ValueError:
-                        try:
-                            start = int(vp.split('-')[0])
-                            expanded.append(f"{book} {current_chapter}:{start}")
-                            print(f"[WARN] Incomplete range in '{book} {original_group}': salvaged {start}")
-                        except ValueError:
-                            print(f"[WARN] Malformed range in '{book} {original_group}': {vp}")
-                        continue
-                else:
-                    try:
-                        v = int(vp)
-                        expanded.append(f"{book} {current_chapter}:{v}")
-                    except ValueError:
-                        print(f"[WARN] Skipping malformed verse segment in '{book} {original_group}': {vp}")
+    return result
 
-            if not expanded:
-                print(f"[WARN] All parts malformed in '{book} {original_group}', skipping.")
-                continue
+def parse_chapter_verse(ref: str, fallback_chapter=None, book=None) -> Tuple[str, str]:
+    """
+    Parses 'chapter:verse' or just 'verse' with fallback chapter.
+    Separates verse number from trailing letters like '26a' -> ('26', 'a').
+    Returns (chapter, verse_number), suffix separately if needed.
+    """
+    if ':' in ref:
+        chapter, verse = ref.split(':', 1)
+    else:
+        ## Single-chapter book fallback
+        if book and len(BIBLE[book]) == 1:
+            chapter = '1'
+            verse = ref
+        else:
+            chapter = str(fallback_chapter)
+            verse = ref
 
-            chapters.add(f"{book} {current_chapter}")
-            verses.extend(expanded)
+    ## Extract trailing letter suffix from verse, e.g. '26a' -> '26', 'a'
+    m = re.match(r'(\d+)([a-zA-Z]*)$', verse)
+    if m:
+        verse_num = m.group(1)
+        suffix = m.group(2)
+    else:
+        verse_num = verse
+        suffix = ''
 
-        reference_objs.append({
-            "reference": f"{book} {ref_block}",
-            "book": book,
-            "chapters": sorted(chapters),
-            "verses": verses,
-        })
+    return chapter, verse_num, suffix
 
-    return reference_objs
+def extract_references(sentence: str) -> List[Dict[str, Any]]:
+    sentence = apply_replacements(sentence)
+    book_pattern = '|'.join(sorted(BIBLE_BOOKS, key=lambda x: -len(x)))
+    regex = re.compile(
+        rf'\b({book_pattern})\s+'
+        r'((?:\d+(?::\d+)?(?:[-–]\d+(?::\d+)?)?[a-zA-Z]?'
+        r'(?:\s*[;,]\s*\d+(?::\d+)?(?:[-–]\d+(?::\d+)?)?[a-zA-Z]?)*))',
+        re.IGNORECASE
+    )
 
-def compile_verse_counts(input_path: Path, output_path: Path):
-    print(f"[INFO] Compiling nested verse_counts.json by book > chapter > verse...")
+    references = []
+    for match in regex.finditer(sentence):
+        book, rest = match.groups()
+        book = book.strip()
 
-    with input_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+        clean_rest = re.sub(r'([0-9]+)[a-zA-Z]', r'\1', rest)
+        full_reference = f"{book} {clean_rest}".strip()
 
-    verse_counts = {}
+        verse_list = parse_verse_range(book, rest)
+        chapters = sorted(set(v.rsplit(':', 1)[0] for v in verse_list))
+        if verse_list:
+            references.append({
+                "reference": full_reference,
+                "book": book,
+                "chapters": chapters,
+                "verses": verse_list
+            })
 
-    for url, entry in data.items():
-        author = entry.get("author", "Unknown")
-        references = entry.get("references")
+    return references
 
-        if not isinstance(references, list):
-            continue
+## Test harness
+def test_cases(example_cases: List[Dict[str, Any]]):
+    for i, case in enumerate(example_cases, 1):
+        print(f"\nTest case {i}: {case['sentence']}")
+        
+        expected = case["references"]
+        print("Expected:")
+        for ref in expected:
+            print(ref)
 
-        for ref_obj in references:
-            for verse in ref_obj.get("verses", []):
-                try:
-                    ## Expect format: "Book Chapter:Verse"
-                    book_part, verse_part = verse.rsplit(" ", 1)
-                    chapter, verse_num = verse_part.split(":")
-                    book = book_part.strip()
-                    chapter = chapter.strip()
-                    verse_num = verse_num.strip()
-                except ValueError:
-                    print(f"[WARN] Skipping malformed verse: {verse}")
-                    continue
+        actual = extract_references(case["sentence"])
+        if actual != expected:
+            print(f"\n❌ Test case {i} failed!")
+            print("Actual:")
+            for ref in actual:
+                print(ref)
+            raise AssertionError(f"Test case {i} failed")
+        print(f"✅ Test case {i} passed")
 
-                ## Initialize nested structure
-                if book not in verse_counts:
-                    verse_counts[book] = {}
-                if chapter not in verse_counts[book]:
-                    verse_counts[book][chapter] = {}
-                if verse_num not in verse_counts[book][chapter]:
-                    verse_counts[book][chapter][verse_num] = {}
-
-                ## Count per author
-                verse_entry = verse_counts[book][chapter][verse_num]
-                verse_entry[author] = verse_entry.get(author, 0) + 1
-
-    ## Add total count per verse
-    for book_data in verse_counts.values():
-        for chapter_data in book_data.values():
-            for verse_data in chapter_data.values():
-                total = sum(count for k, count in verse_data.items() if k != "count")
-                verse_data["count"] = total
-
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(verse_counts, f, indent=2)
-
-    print(f"[INFO] Wrote nested verse usage counts to {output_path}")
-    print(f"[INFO] Total books: {len(verse_counts)}")
-
-def main():
-    input_path = Path("data/resources.json")
-
-    with input_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    updated = 0
-    skipped = 0
-    trivial = 0
-    errored = 0
-
-    for url, entry in data.items():
-        ## Clear any existing 'references' key
-        if "references" in entry:
-            del entry["references"]
-
-        try:
-            if isinstance(entry.get("references"), list):
-                skipped += 1
-                continue
-
-            sentences = entry.get("sentences")
-            scripture = entry.get("scripture")
-
-            if sentences is None and not scripture:
-                print(f"[WARN] [{url}] No 'sentences' or 'scripture' field found.")
-                entry["references"] = []
-                trivial += 1
-                continue
-
-
-            ## Handle sentence + scripture presence
-            all_refs = []
-            sentence_inputs = []
-
-            if isinstance(sentences, list):
-                sentence_inputs.extend(sentences)
-            if isinstance(scripture, str) and scripture.strip():
-                sentence_inputs.append(scripture.strip())
-
-            for sentence in sentence_inputs:
-                if not isinstance(sentence, str):
-                    continue
-                
-                ## Manually clean up sentences
-                sentence = fix_malformed(sentence)
-
-                refs = extract_reference_objects(sentence)
-                all_refs.extend(refs)
-
-            entry["references"] = all_refs
-            updated += 1
-
-        except Exception as e:
-            print(f"[ERROR] Failed processing {url}: {e}")
-            entry["references"] = None
-            errored += 1
-
-    with input_path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-
-    print(f"[INFO] Finished processing resources.json")
-    print(f"[INFO] Updated: {updated}")
-    print(f"[INFO] Skipped (already populated): {skipped}")
-    print(f"[INFO] Trivial (no scripture or sentences): {trivial}")
-    print(f"[INFO] Errored: {errored}")
-
-    verse_counts_path = Path("data/verse_counts.json")
-    compile_verse_counts(input_path, verse_counts_path)
-
-
-if __name__ == "__main__":
-    main()
+## Execute
+test_cases(example_cases)
