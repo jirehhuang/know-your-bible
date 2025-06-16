@@ -57,7 +57,7 @@ def extract_reference_objects(sentence: str):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(sentence)
         chunk = sentence[start:end].strip()
 
-        # Extract the reference block using the original pattern, but limited to this chunk
+        ## Extract the reference block using the original pattern, but limited to this chunk
         book_match = re.match(
             r'^' + re.escape(book) + r'\s+(?P<ref_block>(?:\d+:[\d,\- ]+(?:\s*[;,]\s*\d*:?[\d,\- ]+)*)+)',
             chunk
@@ -73,6 +73,8 @@ def extract_reference_objects(sentence: str):
         current_chapter = None
 
         for group in chapter_groups:
+            original_group = group  # Save for warning messages
+
             if ":" in group:
                 parts = group.split(":")
                 if len(parts) == 2:
@@ -80,13 +82,45 @@ def extract_reference_objects(sentence: str):
                     current_chapter = chapter.strip()
                     verse_part = verse_part.strip()
                 else:
+                    print(f"[WARN] Skipping malformed group (too many colons): {book} {group}")
                     continue
             elif current_chapter:
                 verse_part = group.strip()
             else:
+                print(f"[WARN] Skipping malformed group (no chapter context): {book} {group}")
                 continue
 
-            expanded = expand_verses(current_chapter, verse_part, book)
+            ## Try expanding verses; skip only bad entries
+            expanded = []
+            for vp in re.split(r'[;,]', verse_part):
+                vp = vp.strip()
+                if not vp:
+                    continue
+                try:
+                    if '-' in vp:
+                        try:
+                            start, end = map(int, vp.split('-'))
+                            expanded.extend([f"{book} {current_chapter}:{v}" for v in range(start, end + 1)])
+                        except ValueError:
+                            ## Try to extract the valid number before dash
+                            try:
+                                start = int(vp.split('-')[0])
+                                expanded.append(f"{book} {current_chapter}:{start}")
+                                print(f"[WARN] Incomplete range in '{book} {original_group}': salvaged {start}")
+                            except ValueError:
+                                print(f"[WARN] Malformed range in '{book} {original_group}': {vp}")
+                            continue
+                    else:
+                        v = int(vp)
+                        expanded.append(f"{book} {current_chapter}:{v}")
+                except ValueError:
+                    print(f"[WARN] Skipping malformed verse segment in '{book} {original_group}': {vp}")
+                    continue
+
+            if not expanded:
+                print(f"[WARN] All parts malformed in '{book} {original_group}', skipping.")
+                continue
+
             chapters.add(f"{book} {current_chapter}")
             verses.extend(expanded)
 
@@ -161,6 +195,7 @@ def main():
 
     updated = 0
     skipped = 0
+    trivial = 0
     errored = 0
 
     for url, entry in data.items():
@@ -177,9 +212,11 @@ def main():
             scripture = entry.get("scripture")
 
             if sentences is None and not scripture:
+                print(f"[WARN] [{url}] No 'sentences' or 'scripture' field found.")
                 entry["references"] = []
-                errored += 1
+                trivial += 1
                 continue
+
 
             ## Handle sentence + scripture presence
             all_refs = []
@@ -214,7 +251,8 @@ def main():
     print(f"[INFO] Finished processing resources.json")
     print(f"[INFO] Updated: {updated}")
     print(f"[INFO] Skipped (already populated): {skipped}")
-    print(f"[INFO] Errored or invalid: {errored}")
+    print(f"[INFO] Trivial (no scripture or sentences): {trivial}")
+    print(f"[INFO] Errored: {errored}")
 
     verse_counts_path = Path("data/verse_counts.json")
     compile_verse_counts(input_path, verse_counts_path)
