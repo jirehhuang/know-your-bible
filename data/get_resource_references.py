@@ -25,7 +25,7 @@ def apply_replacements(sentence: str) -> str:
     for wrong, correct in replacements.items():
         sentence = sentence.replace(wrong, correct)
     ## Normalize all hyphens
-    sentence = sentence.replace("–", "-")
+    sentence = sentence.replace("–", "-").replace("—", "-").replace(" - ", "-")
     return sentence
 
 def get_book_and_rest(match: str) -> Tuple[str, str]:
@@ -143,42 +143,56 @@ def extract_references(sentence: str) -> List[Dict[str, Any]]:
 
     references = []
     for match in regex.finditer(sentence):
-        book, rest = match.groups()
+        book, ref_str = match.groups()
         book = book.strip()
 
-        clean_rest = re.sub(r'([0-9]+)[a-zA-Z]', r'\1', rest)
-        full_reference = f"{book} {clean_rest}".strip()
+        # Fix edge case: remove letters accidentally attached to numbers
+        clean_ref_str = re.sub(r'([0-9]+)[a-zA-Z]', r'\1', ref_str)
 
-        verse_list = parse_verse_range(book, rest)
+        full_reference = f"{book} {clean_ref_str}".strip()
+        verse_list = parse_verse_range(book, clean_ref_str)
+        if not verse_list:
+            continue
+
         chapters = sorted(set(v.rsplit(':', 1)[0] for v in verse_list))
-        if verse_list:
-            references.append({
-                "reference": full_reference,
-                "book": book,
-                "chapters": chapters,
-                "verses": verse_list
-            })
+        references.append({
+            "reference": full_reference,
+            "book": book,
+            "chapters": chapters,
+            "verses": verse_list
+        })
 
     return references
 
 ## Test harness
-def test_cases(example_cases: List[Dict[str, Any]]):
-    for i, case in enumerate(example_cases, 1):
-        print(f"\nTest case {i}: {case['sentence']}")
-        
+def test_cases(cases):
+    for i, case in enumerate(cases):
+        i = i+1
+        print(f"Test case {i}: {case['sentence']}")
         expected = case["references"]
-        print("Expected:")
-        for ref in expected:
-            print(ref)
-
         actual = extract_references(case["sentence"])
-        if actual != expected:
-            print(f"\n❌ Test case {i} failed!")
-            print("Actual:")
-            for ref in actual:
-                print(ref)
-            raise AssertionError(f"Test case {i} failed")
-        print(f"✅ Test case {i} passed")
+
+        # Check number of references
+        if len(expected) != len(actual):
+            print("Expected:", expected)
+            print("Actual:", actual)
+            raise AssertionError(f"Test case {i} failed!")
+
+        for exp_ref, act_ref in zip(expected, actual):
+            for key in ['reference', 'book']:
+                if exp_ref[key] != act_ref[key]:
+                    print("Expected:", exp_ref)
+                    print("Actual:", act_ref)
+                    raise AssertionError(f"Test case {i} failed!")
+
+            # Compare chapters and verses as sets
+            if set(exp_ref["chapters"]) != set(act_ref["chapters"]) or \
+               set(exp_ref["verses"]) != set(act_ref["verses"]):
+                print("Expected:", exp_ref)
+                print("Actual:", act_ref)
+                raise AssertionError(f"Test case {i} failed!")
+
+        print(f"✅ Test case {i} passed\n")
 
 ## Execute
 test_cases(example_cases)

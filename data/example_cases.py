@@ -249,7 +249,7 @@ example_cases = [
         "sentence": "(see 2 Corinthians 6:18 - 7:1 ; 13:2 ; ",  # Ranges across chapters and additional verses
         "references": [
             {
-                "reference": "2 Corinthians 6:18 - 7:1 ; 13:2",
+                "reference": "2 Corinthians 6:18-7:1 ; 13:2",
                 "book": "2 Corinthians",
                 "chapters": [
                     "2 Corinthians 6",
