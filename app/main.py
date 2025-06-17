@@ -17,7 +17,7 @@ from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 from typing import Annotated
-from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
+from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
 
 DEBUG_MODE = True  # Global debug mode flag
 B = 1  # TODO: Make adjustable parameter
@@ -88,10 +88,11 @@ def load_user_settings_from_db(user_id: str):
     testaments = set(settings.get("testaments", []))
     books = set(settings.get("books", []))
     chapters = settings.get("chapters", {})
+    translation = settings.get("translation", "esv")  # Default to ESV
+    prioritize_frequency = settings.get("prioritize_frequency", True)
 
     ## Load derived data
-    translation = settings.get("translation", "esv")  # Default to ESV
-    bible = get_bible_translation(translation=translation, bool_counts=True)
+    bible = get_bible_translation(translation=translation, bool_counts=prioritize_frequency)
     eligible_references = get_eligible_references(bible, testaments, books, chapters)
 
     ## Cache full user config
@@ -299,9 +300,11 @@ def get_settings(request: Request):
 
     debug(f"[GET] /settings for user_id={user_id}")
 
-    selected_testaments = settings.get("settings", {}).get("testaments", [])
     selected_books = settings.get("settings", {}).get("books", [])
     selected_chapters = settings.get("settings", {}).get("chapters", {})
+    selected_testaments = settings.get("settings", {}).get("testaments", [])
+    selected_translation = settings.get("settings", {}).get("translation", "esv")
+    prioritize_frequency = settings.get("settings", {}).get("prioritize_frequency", True)
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -309,9 +312,12 @@ def get_settings(request: Request):
         "ot_books": OT_BOOKS,
         "nt_books": NT_BOOKS,
         "chapter_counts": CHAPTER_COUNTS,
-        "selected_testaments": selected_testaments,
+        "avail_translations": AVAIL_TRANSLATIONS,
+        "selected_translation": selected_translation,
+        "prioritize_frequency": prioritize_frequency,
         "selected_books": selected_books,
         "selected_chapters": selected_chapters,
+        "selected_testaments": selected_testaments,
     })
 
 @app.post("/settings", response_class=HTMLResponse)
@@ -320,6 +326,8 @@ def save_settings(
     selected_books: list[str] = Form(default=[]),
     selected_chapters: list[str] = Form(default=[]),
     selected_testaments: list[str] = Form(default=[]),
+    translation: str = Form(default="esv"),
+    prioritize_frequency: str = Form(default=None),  # checkbox returns "on" if checked, else omitted
 ):
     user_id = get_user_id(request)
 
@@ -327,6 +335,8 @@ def save_settings(
     debug(f"Selected testaments: {selected_testaments}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
+    debug(f"Selected translation: {translation}")
+    debug(f"Prioritize by frequency: {bool(prioritize_frequency)}")
 
     chapter_map = {}
     for val in selected_chapters:
@@ -334,21 +344,21 @@ def save_settings(
         ch = int(ch)
         chapter_map.setdefault(book, []).append(ch)
 
-    debug(f"Parsed chapter map: {chapter_map}")
-
     item = {
         "user_id": user_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "testaments": selected_testaments,
         "books": selected_books,
         "chapters": chapter_map,
+        "translation": translation,
+        "prioritize_frequency": bool(prioritize_frequency),
     }
 
-    if "@" in user_id:
+    if True or "@" in user_id:  # TODO:
         settings_table.put_item(Item=item)
         debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
-    bible = get_bible_translation(translation=item.get("translation", "esv"), bool_counts=True)
+    bible = get_bible_translation(translation=translation, bool_counts=prioritize_frequency)
     cache.set_cached_user_settings(user_id, {
         "settings": item,
         "bible": bible,
@@ -456,7 +466,7 @@ def submit(
     distance, score = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
 
     ## Write to DynamoDB if logged in to email
-    if "@" in user_id:
+    if True or "@" in user_id:  # TODO:
         results_table.put_item(Item={
             "user_id": user_id,
             "id": str(uuid6()),

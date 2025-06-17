@@ -19,12 +19,38 @@
 
 {% block content %}
   <form method="post" action="/settings">
-    <h2>Review Settings</h2>
+    <h1>Settings</h1>
+
+    Click "Save" to apply your changes. Login with Google to save your settings and progress across sessions.
+
+    <br><br>
+
+    <h3>Review Settings</h3>
+    <label for="translation">Translation:</label>
+    <select name="translation" id="translation">
+      {% for trans in avail_translations %}
+        <option value="{{ trans }}"
+          {% if trans == selected_translation %}selected{% endif %}>
+          {{ trans | upper }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <br><br>
+
+    <label>
+      <input type="checkbox" name="prioritize_frequency"
+            {% if prioritize_frequency %}checked{% endif %}>
+      Prioritize verses based on reference frequency in <a href=https://www.gty.org>gty.org</a> sermons and <a href=https://www.desiringgod.org>desiringgod.org</a> resources
+    </label>
+
+    <br><br>
+
+    <h3>Review Selection</h3>
 
     <ul>
       <li>Select testaments, books, and/or chapters to review. If none are selected, defaults to the whole Bible.</li>
       <li>If a testament is selected, all of its books are included. Similarly, if a book is selected, all of its chapters are included. Otherwise, only selected chapters are included.</li>
-      <li>Click "Save" to apply your changes. Login with Google to save your settings and progress across sessions.</li>
     </ul>
 
     <label>
