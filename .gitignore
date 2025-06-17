@@ -1,7 +1,8 @@
 .env
-/.venv
+.venv/
 *.xml
 __pycache__/
-temp*
-temp
+temp/
+temp_url/
+temp_year_page/
 resources.json
