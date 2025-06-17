@@ -140,7 +140,7 @@
       <strong><a href="/">Know Your Bible</a></strong>
     </div>
     <div class="top-bar-right">
-      {% if request.cookies.get('user_id') %}
+      {% if request.cookies.get('user_id') and '@' in request.cookies.get('user_id') %}
         <span><strong>{{ request.cookies.get('user_id') }}</strong></span>
         <a href="/logout">Logout</a>
       {% else %}
