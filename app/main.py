@@ -16,6 +16,7 @@ from math import floor
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
+from typing import Annotated
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
 
 DEBUG_MODE = True  # Global debug mode flag
@@ -84,13 +85,14 @@ def load_user_settings_from_db(user_id: str):
     response = settings_table.get_item(Key={"user_id": user_id})
     settings = convert_decimals(response.get("Item", {}))
     
+    testaments = set(settings.get("testaments", []))
     books = set(settings.get("books", []))
     chapters = settings.get("chapters", {})
 
     ## Load derived data
     translation = settings.get("translation", "esv")  # Default to ESV
     bible = get_bible_translation(translation=translation, bool_counts=True)
-    eligible_references = get_eligible_references(bible, books, chapters)
+    eligible_references = get_eligible_references(bible, testaments, books, chapters)
 
     ## Cache full user config
     full_settings = {
@@ -103,7 +105,7 @@ def load_user_settings_from_db(user_id: str):
 
     return full_settings
 
-def get_eligible_references(bible, selected_books, selected_chapters, upweight=["John MacArthur", "John Piper"]):
+def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters, upweight=["John MacArthur", "John Piper"]):
     eligible_references = []
 
     def add_verse_with_weight(book, chapter, verse):
@@ -111,6 +113,10 @@ def get_eligible_references(bible, selected_books, selected_chapters, upweight=[
         for upweight_key in upweight:
             weight += bible[book][chapter][verse].get(upweight_key, 0)
         eligible_references.append((book, chapter, verse, weight))
+
+    ## Add entire testament
+    selected_books |= set(OT_BOOKS if "old" in selected_testaments else [])
+    selected_books |= set(NT_BOOKS if "new" in selected_testaments else [])
 
     for book in bible:
         chapters = bible[book]
@@ -293,6 +299,7 @@ def get_settings(request: Request):
 
     debug(f"[GET] /settings for user_id={user_id}")
 
+    selected_testaments = settings.get("settings", {}).get("testaments", [])
     selected_books = settings.get("settings", {}).get("books", [])
     selected_chapters = settings.get("settings", {}).get("chapters", {})
 
@@ -302,6 +309,7 @@ def get_settings(request: Request):
         "ot_books": OT_BOOKS,
         "nt_books": NT_BOOKS,
         "chapter_counts": CHAPTER_COUNTS,
+        "selected_testaments": selected_testaments,
         "selected_books": selected_books,
         "selected_chapters": selected_chapters,
     })
@@ -309,12 +317,14 @@ def get_settings(request: Request):
 @app.post("/settings", response_class=HTMLResponse)
 def save_settings(
     request: Request,
-    selected_books: list[str] = Form([]),
-    selected_chapters: list[str] = Form([]),
+    selected_books: list[str] = Form(default=[]),
+    selected_chapters: list[str] = Form(default=[]),
+    selected_testaments: list[str] = Form(default=[]),
 ):
     user_id = get_user_id(request)
 
     debug(f"[POST] /settings - user_id={user_id}")
+    debug(f"Selected testaments: {selected_testaments}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
 
@@ -329,20 +339,20 @@ def save_settings(
     item = {
         "user_id": user_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "testaments": selected_testaments,
         "books": selected_books,
         "chapters": chapter_map,
     }
-    ## Save new settings if logged in to email
+
     if "@" in user_id:
         settings_table.put_item(Item=item)
         debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
-    ## Set cached user settings
     bible = get_bible_translation(translation=item.get("translation", "esv"), bool_counts=True)
     cache.set_cached_user_settings(user_id, {
         "settings": item,
         "bible": bible,
-        "eligible_references": get_eligible_references(bible, set(selected_books), chapter_map),
+        "eligible_references": get_eligible_references(bible, selected_testaments, set(selected_books), chapter_map),
     })
     debug(f"Settings saved for user_id={user_id}")
 

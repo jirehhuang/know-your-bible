@@ -4,13 +4,15 @@
 
 {% block styles %}
   <style>
-    /* Override container to left-align content only on Settings page */
     .container {
       text-align: left;
-      max-width: 800px;  /* optional: limit width for readability */
+      max-width: 800px;
       margin-left: auto;
       margin-right: auto;
       padding: 20px;
+    }
+    .indent {
+      margin-left: 20px;
     }
   </style>
 {% endblock %}
@@ -20,60 +22,71 @@
     <h2>Review Settings</h2>
 
     <ul>
-      <li>Select books and/or chapters to review. If none are selected, defaults to the whole Bible.</li>
-      <li>If a book is selected, all of its chapters are included. Otherwise, only selected chapters are included.</li>
+      <li>Select testaments, books, and/or chapters to review. If none are selected, defaults to the whole Bible.</li>
+      <li>If a testament is selected, all of its books are included. Similarly, if a book is selected, all of its chapters are included. Otherwise, only selected chapters are included.</li>
       <li>Click "Save" to apply your changes. Login with Google to save your settings and progress across sessions.</li>
     </ul>
 
-    <h4>Old Testament</h4>
-    {% for book in ot_books %}
-      <label>
-        <input type="checkbox" name="selected_books" value="{{ book }}"
-          {% if book in selected_books %}checked{% endif %}>
-        {{ book }}
-      </label>
-
-      {% if book in chapter_counts and chapter_counts[book] > 1 %}
-        <div style="margin-left:20px;">
-          {% for chapter in range(1, chapter_counts[book] + 1) %}
-            <label>
-              <input type="checkbox" name="selected_chapters"
-                     value="{{ book }}|{{ chapter }}"
-                     {% if book in selected_chapters and chapter in selected_chapters[book] %}checked{% endif %}>
-              {{ chapter }}
-            </label>
-          {% endfor %}
-        </div>
-      {% else %}
+    <label>
+      <input type="checkbox" name="selected_testaments" value="old"
+        {% if "old" in selected_testaments %}checked{% endif %}>
+      <strong>Old Testament</strong><br><br>
+    </label>
+    <div class="indent">
+      {% for book in ot_books %}
+        <label>
+          <input type="checkbox" name="selected_books" value="{{ book }}"
+            {% if book in selected_books %}checked{% endif %}>
+          {{ book }}
+        </label>
+        {% if book in chapter_counts and chapter_counts[book] > 1 %}
+          <div class="indent">
+            {% for chapter in range(1, chapter_counts[book] + 1) %}
+              <label>
+                <input type="checkbox" name="selected_chapters"
+                       value="{{ book }}|{{ chapter }}"
+                       {% if book in selected_chapters and chapter in selected_chapters[book] %}checked{% endif %}>
+                {{ chapter }}
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <br>
+        {% endif %}
         <br>
-      {% endif %}
-      <br>
-    {% endfor %}
+      {% endfor %}
+    </div>
 
-    <h4>New Testament</h4>
-    {% for book in nt_books %}
-      <label>
-        <input type="checkbox" name="selected_books" value="{{ book }}"
-          {% if book in selected_books %}checked{% endif %}>
-        {{ book }}
-      </label>
-
-      {% if book in chapter_counts and chapter_counts[book] > 1 %}
-        <div style="margin-left:20px;">
-          {% for chapter in range(1, chapter_counts[book] + 1) %}
-            <label>
-              <input type="checkbox" name="selected_chapters"
-                     value="{{ book }}|{{ chapter }}"
-                     {% if book in selected_chapters and chapter in selected_chapters[book] %}checked{% endif %}>
-              {{ chapter }}
-            </label>
-          {% endfor %}
-        </div>
-      {% else %}
+    <br>
+    <label>
+      <input type="checkbox" name="selected_testaments" value="new"
+        {% if "new" in selected_testaments %}checked{% endif %}>
+      <strong>New Testament</strong><br><br>
+    </label>
+    <div class="indent">
+      {% for book in nt_books %}
+        <label>
+          <input type="checkbox" name="selected_books" value="{{ book }}"
+            {% if book in selected_books %}checked{% endif %}>
+          {{ book }}
+        </label>
+        {% if book in chapter_counts and chapter_counts[book] > 1 %}
+          <div class="indent">
+            {% for chapter in range(1, chapter_counts[book] + 1) %}
+              <label>
+                <input type="checkbox" name="selected_chapters"
+                       value="{{ book }}|{{ chapter }}"
+                       {% if book in selected_chapters and chapter in selected_chapters[book] %}checked{% endif %}>
+                {{ chapter }}
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <br>
+        {% endif %}
         <br>
-      {% endif %}
-      <br>
-    {% endfor %}
+      {% endfor %}
+    </div>
 
     <br>
     <button type="submit" style="font-size: 1em;">Save</button>
