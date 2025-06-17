@@ -1,8 +1,9 @@
 import os
 import re
-import random
-import boto3
+import sys
 import logging
+import boto3
+import random
 import app.utils.cache as cache
 from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI, Request, Form
@@ -12,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from datetime import datetime, timezone
 from uuid6 import uuid6
 from decimal import Decimal
-from math import floor
+from math import floor, log10
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
@@ -173,14 +174,27 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
     return eligible_references
 
 def update_weights(bible, eligible_references, upweight=["John MacArthur", "John Piper"]):
-    def add_weight(book, chapter, verse):
-        weight = bible[book][chapter][verse].get("weight", 1)
+    now = datetime.now(timezone.utc)
+
+    def get_weight(book, chapter, verse):
+        ## Initial weight "prior"
+        verse_dict = bible[book][chapter][verse]
+        weight = verse_dict.get("weight", 1)
+
+        ## Add counts, if included with bool_counts
         for upweight_key in upweight:
-            weight += bible[book][chapter][verse].get(upweight_key, 0)
+            weight += verse_dict.get(upweight_key, 0)
+
+        ## Adjust by due date, if any
+        due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
+        days2due = (now - due).days
+        weight_factor = 10 ** min(log10(sys.float_info.max), days2due)
+        weight = weight * weight_factor
+
         return weight
     
     eligible_references = [
-        (book, chapter, verse, add_weight(book, chapter, verse)) 
+        (book, chapter, verse, get_weight(book, chapter, verse)) 
         for (book, chapter, verse, _) in eligible_references
     ]
     return eligible_references
