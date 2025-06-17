@@ -26,7 +26,8 @@
     <br><br>
 
     <h3>Review Settings</h3>
-    <label for="translation">Translation:</label>
+
+    <label for="translation">Bible Translation:</label>
     <select name="translation" id="translation">
       {% for trans in avail_translations %}
         <option value="{{ trans }}"
@@ -38,13 +39,21 @@
 
     <br><br>
 
-    <label>
-      <input type="checkbox" name="prioritize_frequency"
-            {% if prioritize_frequency %}checked{% endif %}>
-      Prioritize verses based on reference frequency in <a href=https://www.gty.org>gty.org</a> sermons and <a href=https://www.desiringgod.org>desiringgod.org</a> resources
-    </label>
+    <label for="priority">Verse Priority:</label>
+    <select name="priority" id="priority">
+      <option value="uniform" {% if priority == "uniform" %}selected{% endif %}>Uniform</option>
+      <option value="weighted" {% if priority == "weighted" %}selected{% endif %}>Weighted</option>
+    </select>
 
     <br><br>
+    
+    <label for="selector">Selection Method:</label>
+    <select name="selector" id="selector">
+      <option value="random" {% if selector == "random" %}selected{% endif %}>Random</option>
+      <option value="greedy" {% if selector == "greedy" %}selected{% endif %}>Greedy</option>
+    </select>
+
+    <p id="method-description" style="font-style: italic; color: #444; margin-bottom: 2em;"></p>
 
     <h3>Review Selection</h3>
 
@@ -52,6 +61,7 @@
       <li>Select testaments, books, and/or chapters to review. If none are selected, defaults to the whole Bible.</li>
       <li>If a testament is selected, all of its books are included. Similarly, if a book is selected, all of its chapters are included. Otherwise, only selected chapters are included.</li>
     </ul>
+    <br>
 
     <label>
       <input type="checkbox" name="selected_testaments" value="old"
@@ -117,4 +127,43 @@
     <br>
     <button type="submit" style="font-size: 1em;">Save</button>
   </form>
+
+  <script>
+    const translationSelect = document.getElementById("translation");
+    const prioritySelect = document.getElementById("priority");
+    const selectorSelect = document.getElementById("selector");
+    const description = document.getElementById("method-description");
+
+    function updateDescription() {
+      const translation = translationSelect.value.toUpperCase();
+      const priority = prioritySelect.value;
+      const selector = selectorSelect.value;
+
+      let desc = `Using verse text from the ${translation} translation. `;
+
+      if (selector === "random") {
+        desc += "Randomly select verses from review selection with probability proportional to weight, ";
+      } else if (selector === "greedy") {
+        desc += "Select verses from review selection with the highest weight, ";
+      }
+
+      if (priority === "weighted") {
+        desc += `with greater initial weight given to more commonly cited verses in <a href=https://www.gty.org/>gty.org</a> sermons and <a href=https://www.desiringgod.org/>desiringgod.org</a> resources. `;
+      } else {
+        desc += "with equal initial weight given to all verses. ";
+      }
+
+      desc += "Verse weights are scaled down when recently reviewed and inflated when past due."
+
+      description.innerHTML = desc;
+    }
+
+    // Initialize and bind listeners
+    translationSelect.addEventListener("change", updateDescription);
+    prioritySelect.addEventListener("change", updateDescription);
+    selectorSelect.addEventListener("change", updateDescription);
+
+    // Call once on page load
+    updateDescription();
+  </script>
 {% endblock %}

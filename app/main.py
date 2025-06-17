@@ -103,7 +103,7 @@ def load_user_settings_from_db(user_id: str):
     books = set(settings.get("books", []))
     chapters = settings.get("chapters", {})
     translation = settings.get("translation", "esv")  # Default to ESV
-    prioritize_frequency = settings.get("prioritize_frequency", True)
+    priority = settings.get("priority", "weighted")
 
     ## Retrieve scheduler
     scheduler_dict = settings.get("scheduler_dict")
@@ -124,7 +124,7 @@ def load_user_settings_from_db(user_id: str):
         user_data = []
 
     ## Load derived data
-    bible = get_bible_translation(translation=translation, bool_counts=prioritize_frequency, user_data=user_data)
+    bible = get_bible_translation(translation=translation, bool_counts=bool(priority=="weighted"), user_data=user_data)
     eligible_references = get_eligible_references(bible, testaments, books, chapters)
 
     ## Cache full user config
@@ -220,7 +220,12 @@ def get_random_reference(settings):
     ## Refresh weights before sampling
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
 
-    book, chapter, verse, weight = weighted_sample(eligible_references)
+    selector = settings.get("settings", {}).get("selector", "random")
+    if selector == "random":
+        book, chapter, verse, weight = weighted_sample(eligible_references)
+    elif selector == "greedy":
+        book, chapter, verse, weight = max(eligible_references, key=lambda x: x[3])
+    
     debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
     return book, chapter, verse
 
@@ -383,7 +388,8 @@ def get_settings(request: Request):
     selected_chapters = settings.get("settings", {}).get("chapters", {})
     selected_testaments = settings.get("settings", {}).get("testaments", [])
     selected_translation = settings.get("settings", {}).get("translation", "esv")
-    prioritize_frequency = settings.get("settings", {}).get("prioritize_frequency", True)
+    selected_selector = settings.get("settings", {}).get("selector", "random")
+    selected_priority = settings.get("settings", {}).get("priority", "weighted")
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -393,7 +399,8 @@ def get_settings(request: Request):
         "chapter_counts": CHAPTER_COUNTS,
         "avail_translations": AVAIL_TRANSLATIONS,
         "selected_translation": selected_translation,
-        "prioritize_frequency": prioritize_frequency,
+        "selector": selected_selector,
+        "priority": selected_priority,
         "selected_books": selected_books,
         "selected_chapters": selected_chapters,
         "selected_testaments": selected_testaments,
@@ -406,7 +413,8 @@ def save_settings(
     selected_chapters: list[str] = Form(default=[]),
     selected_testaments: list[str] = Form(default=[]),
     translation: str = Form(default="esv"),
-    prioritize_frequency: str = Form(default=None),  # checkbox returns "on" if checked, else omitted
+    selector: str = Form(default="random"),
+    priority: str = Form(default="weighted"),
 ):
     user_id, settings = get_user_id_settings(request)
     user_data = settings.get("user_data", [])
@@ -417,7 +425,8 @@ def save_settings(
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
     debug(f"Selected translation: {translation}")
-    debug(f"Prioritize by frequency: {bool(prioritize_frequency)}")
+    debug(f"Selected selector: {selector}")
+    debug(f"Selected priority: {priority}")
 
     chapter_map = {}
     for val in selected_chapters:
@@ -432,7 +441,8 @@ def save_settings(
         "books": selected_books,
         "chapters": chapter_map,
         "translation": translation,
-        "prioritize_frequency": bool(prioritize_frequency),
+        "selector": selector,
+        "priority": priority,
         "scheduler_dict": scheduler.to_dict(),
     }
 
@@ -442,7 +452,7 @@ def save_settings(
 
     bible = get_bible_translation(
         translation=translation, 
-        bool_counts=prioritize_frequency, 
+        bool_counts=bool(priority=="weighted"),
         user_data=user_data
     )
     cache.set_cached_user_settings(user_id, {
