@@ -20,7 +20,6 @@ from typing import Annotated
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
 
 DEBUG_MODE = True  # Global debug mode flag
-B = 1  # TODO: Make adjustable parameter
 
 def debug(msg):
     if DEBUG_MODE:
@@ -222,7 +221,7 @@ def match_book_name(bible, input_text):
         debug(f"Matched {input_text} to book: {match}")
     return match
 
-def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v):
+def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
     def flat_index(book, chapter, verse):
         chapters = bible[book]
         total = 0
@@ -238,9 +237,28 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
     idx_sub = flat_index(submitted_book, submitted_ch, submitted_v)
     idx_act = flat_index(actual_book, actual_ch, actual_v)
     distance = abs(idx_sub - idx_act)
-    score = max(0, floor(100 - B * distance))
-    debug(f"Calculated score: {score} (distance: {distance})")
-    return distance, score
+
+    ## Penalize by distance and timer, with 20-point grace
+    penalty_dist = 1 * distance
+    penalty_time = 2 * timer
+    penalty = penalty_dist + penalty_time
+
+    ## Compute score with buffer for time penalty
+    penalty_time_adj = max(0, penalty_time - 20)
+    score = max(0, min(100, floor(100 - penalty_dist - penalty_time_adj)))
+
+    ## Compute rating based on penalty: Easy (<= 20), Good (<=40), Hard (<= 60), Again (>60)
+    if penalty <= 20:
+        rating = "Easy"
+    elif penalty <= 40:
+        rating = "Good"
+    elif penalty <= 60:
+        rating = "Hard"
+    else:
+        rating = "Again"
+    
+    debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, rating: {rating})")
+    return distance, score, rating
 
 def get_user_id(request: Request) -> str:
     user_id = request.cookies.get("user_id")
@@ -463,7 +481,7 @@ def submit(
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
-    distance, score = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
+    distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
 
     ## Write to DynamoDB if logged in to email
     if True or "@" in user_id:  # TODO:
@@ -476,6 +494,7 @@ def submit(
             "score": score,
             "distance": Decimal(str(distance)),
             "timer": Decimal(str(round(float(timer), 3))),
+            "rating": rating,
         })
         debug("✅ Result saved to DynamoDB")
 
@@ -486,6 +505,7 @@ def submit(
         "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
         "score": score,
         "timer": round(float(timer), 1),
+        "rating": rating,
     }
 
     return templates.TemplateResponse("result.html", context)
