@@ -90,8 +90,22 @@ def load_user_settings_from_db(user_id: str):
     translation = settings.get("translation", "esv")  # Default to ESV
     prioritize_frequency = settings.get("prioritize_frequency", True)
 
+    ## Load user data (results)
+    user_data = []
+    try:
+        paginator = results_table.meta.client.get_paginator("query")
+        page_iterator = paginator.paginate(
+            TableName=results_table.name,
+            KeyConditionExpression=Key("user_id").eq(user_id)
+        )
+        for page in page_iterator:
+            user_data.extend(page.get("Items", []))
+    except Exception as e:
+        debug(f"⚠️ Error loading user data for {user_id}: {e}")
+        user_data = []
+
     ## Load derived data
-    bible = get_bible_translation(translation=translation, bool_counts=prioritize_frequency)
+    bible = get_bible_translation(translation=translation, bool_counts=prioritize_frequency, user_data=user_data)
     eligible_references = get_eligible_references(bible, testaments, books, chapters)
 
     ## Cache full user config
@@ -99,6 +113,7 @@ def load_user_settings_from_db(user_id: str):
         "settings": settings,
         "bible": bible,
         "eligible_references": eligible_references,
+        "user_data": user_data,
     }
 
     cache.set_cached_user_settings(user_id, full_settings)
@@ -347,7 +362,7 @@ def save_settings(
     translation: str = Form(default="esv"),
     prioritize_frequency: str = Form(default=None),  # checkbox returns "on" if checked, else omitted
 ):
-    user_id = get_user_id(request)
+    user_id, settings = get_user_id_settings(request)
 
     debug(f"[POST] /settings - user_id={user_id}")
     debug(f"Selected testaments: {selected_testaments}")
@@ -362,7 +377,7 @@ def save_settings(
         ch = int(ch)
         chapter_map.setdefault(book, []).append(ch)
 
-    item = {
+    new_settings = {
         "user_id": user_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "testaments": selected_testaments,
@@ -373,14 +388,20 @@ def save_settings(
     }
 
     if True or "@" in user_id:  # TODO:
-        settings_table.put_item(Item=item)
+        settings_table.put_item(Item=new_settings)
         debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
-    bible = get_bible_translation(translation=translation, bool_counts=prioritize_frequency)
+    user_data = settings.get("user_data", [])  # Retrieve from previous settings
+    bible = get_bible_translation(
+        translation=translation, 
+        bool_counts=prioritize_frequency, 
+        user_data=user_data
+    )
     cache.set_cached_user_settings(user_id, {
-        "settings": item,
+        "settings": new_settings,
         "bible": bible,
         "eligible_references": get_eligible_references(bible, selected_testaments, set(selected_books), chapter_map),
+        "user_data": user_data
     })
     debug(f"Settings saved for user_id={user_id}")
 
@@ -484,19 +505,25 @@ def submit(
     distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
 
     ## Write to DynamoDB if logged in to email
+    result = {
+        "user_id": user_id,
+        "id": str(uuid6()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "reference": actual_ref,
+        "submitted": normalized_submitted_ref,
+        "score": score,
+        "distance": Decimal(str(distance)),
+        "timer": Decimal(str(round(float(timer), 3))),
+        "rating": rating,
+    }
     if True or "@" in user_id:  # TODO:
-        results_table.put_item(Item={
-            "user_id": user_id,
-            "id": str(uuid6()),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "reference": actual_ref,
-            "submitted": normalized_submitted_ref,
-            "score": score,
-            "distance": Decimal(str(distance)),
-            "timer": Decimal(str(round(float(timer), 3))),
-            "rating": rating,
-        })
+        results_table.put_item(Item=result)
         debug("✅ Result saved to DynamoDB")
+    
+    ## Update user data for verse
+    settings["user_data"].append(result)
+    settings["bible"][book][chapter][verse]["user_data"] = result
+    cache.set_cached_user_settings(user_id, settings)
 
     context = {
         "request": request,
