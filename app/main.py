@@ -187,10 +187,13 @@ def update_weights(bible, eligible_references, upweight=["John MacArthur", "John
 
         ## Adjust by due date, if any
         due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
-        days2due = (now - due).days
-        weight_factor = 10 ** min(log10(sys.float_info.max), days2due)
-        weight = weight * weight_factor
+        interval_secs = verse_dict.get("user_data", {}).get("interval_secs", 1)
+        secs2due = (now - due).seconds
 
+        ## 10x weight for every 1% overdue
+        weight_factor = 10 ** min(log10(sys.float_info.max), secs2due / interval_secs)
+
+        weight = min(sys.float_info.max, weight * weight_factor)
         return weight
     
     eligible_references = [
@@ -576,6 +579,7 @@ def submit(
         "rating": rating,
         "card_dict": card.to_dict(),
         "due_str": str(card.due),
+        "interval_secs": (card.due - card.last_review).seconds,
     }
     if True or "@" in user_id:  # TODO:
         results_table.put_item(Item=convert_types(result, "Decimal"))
