@@ -16,7 +16,7 @@ from math import floor
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
-from typing import Annotated
+from fsrs import Scheduler, Card, Rating, ReviewLog
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
 
 DEBUG_MODE = True  # Global debug mode flag
@@ -71,24 +71,42 @@ oauth.register(
     client_kwargs={'scope': 'openid email profile'},
 )
 
-def convert_decimals(obj):
-    if isinstance(obj, list):
-        return [convert_decimals(i) for i in obj]
-    elif isinstance(obj, dict):
-        return {k: convert_decimals(v) for k, v in obj.items()}
-    elif isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    return obj
+## Ease rating
+rating_map = {
+    1: "Again",
+    2: "Hard",
+    3: "Good",
+    4: "Easy"
+}
+
+def convert_types(data, to="float"):
+    """
+    Recursively convert all Decimal to float (to='float') or float to Decimal (to='decimal') in a JSON-like structure.
+    """
+    if isinstance(data, dict):
+        return {k: convert_types(v, to) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [convert_types(v, to) for v in data]
+    elif to.lower() == "float" and isinstance(data, Decimal):
+        return float(data)
+    elif to.lower() == "decimal" and isinstance(data, float):
+        return Decimal(str(data))  # Use str to preserve precision
+    else:
+        return data
 
 def load_user_settings_from_db(user_id: str):
     response = settings_table.get_item(Key={"user_id": user_id})
-    settings = convert_decimals(response.get("Item", {}))
+    settings = convert_types(response.get("Item", {}), "float")
     
     testaments = set(settings.get("testaments", []))
     books = set(settings.get("books", []))
     chapters = settings.get("chapters", {})
     translation = settings.get("translation", "esv")  # Default to ESV
     prioritize_frequency = settings.get("prioritize_frequency", True)
+
+    ## Retrieve scheduler
+    scheduler_dict = settings.get("scheduler_dict")
+    scheduler = Scheduler.from_dict(scheduler_dict) if scheduler_dict else Scheduler()
 
     ## Load user data (results)
     user_data = []
@@ -114,37 +132,32 @@ def load_user_settings_from_db(user_id: str):
         "bible": bible,
         "eligible_references": eligible_references,
         "user_data": user_data,
+        "scheduler": scheduler,
     }
 
     cache.set_cached_user_settings(user_id, full_settings)
 
     return full_settings
 
-def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters, upweight=["John MacArthur", "John Piper"]):
-    eligible_references = []
-
-    def add_verse_with_weight(book, chapter, verse):
-        weight = bible[book][chapter][verse].get("weight", 1)
-        for upweight_key in upweight:
-            weight += bible[book][chapter][verse].get(upweight_key, 0)
-        eligible_references.append((book, chapter, verse, weight))
-
-    ## Add entire testament
+def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters):
+    ## Add entire testament(s)
     selected_books |= set(OT_BOOKS if "old" in selected_testaments else [])
     selected_books |= set(NT_BOOKS if "new" in selected_testaments else [])
+    
+    eligible_references = []
 
     for book in bible:
         chapters = bible[book]
         if book in selected_books:
             for chapter in chapters:
                 for verse in chapters[chapter]:
-                    add_verse_with_weight(book, chapter, verse)
+                    eligible_references.append((book, chapter, verse, 1))
         elif book in selected_chapters:
             for ch in selected_chapters[book]:
                 ch_str = str(ch)
                 if ch_str in chapters:
                     for verse in chapters[ch_str]:
-                        add_verse_with_weight(book, ch_str, verse)
+                        eligible_references.append((book, chapter, verse, 1))
                 else:
                     debug(f"⚠️ Chapter {ch_str} not found in {book}")
 
@@ -153,10 +166,23 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
         for book in bible:
             for chapter in bible[book]:
                 for verse in bible[book][chapter]:
-                    add_verse_with_weight(book, chapter, verse)
+                    eligible_references.append((book, chapter, verse, 1))
 
     # debug(f"eligible_references: {json.dumps(eligible_references, indent=2)}")
     
+    return eligible_references
+
+def update_weights(bible, eligible_references, upweight=["John MacArthur", "John Piper"]):
+    def add_weight(book, chapter, verse):
+        weight = bible[book][chapter][verse].get("weight", 1)
+        for upweight_key in upweight:
+            weight += bible[book][chapter][verse].get(upweight_key, 0)
+        return weight
+    
+    eligible_references = [
+        (book, chapter, verse, add_weight(book, chapter, verse)) 
+        for (book, chapter, verse, _) in eligible_references
+    ]
     return eligible_references
 
 ## Weighted sampling helper
@@ -173,7 +199,10 @@ def weighted_sample(choices):
 
 ## Get random verse reference using weights
 def get_random_reference(settings):
-    eligible_references = settings["eligible_references"]
+
+    ## Refresh weights before sampling
+    eligible_references = update_weights(settings["bible"], settings["eligible_references"])
+
     book, chapter, verse, weight = weighted_sample(eligible_references)
     debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
     return book, chapter, verse
@@ -264,13 +293,13 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
 
     ## Compute rating based on penalty: Easy (<= 20), Good (<=40), Hard (<= 60), Again (>60)
     if penalty <= 20:
-        rating = "Easy"
+        rating = 4
     elif penalty <= 40:
-        rating = "Good"
+        rating = 3
     elif penalty <= 60:
-        rating = "Hard"
+        rating = 2
     else:
-        rating = "Again"
+        rating = 1
     
     debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, rating: {rating})")
     return distance, score, rating
@@ -363,6 +392,8 @@ def save_settings(
     prioritize_frequency: str = Form(default=None),  # checkbox returns "on" if checked, else omitted
 ):
     user_id, settings = get_user_id_settings(request)
+    user_data = settings.get("user_data", [])
+    scheduler = settings.get("scheduler", Scheduler())
 
     debug(f"[POST] /settings - user_id={user_id}")
     debug(f"Selected testaments: {selected_testaments}")
@@ -385,13 +416,13 @@ def save_settings(
         "chapters": chapter_map,
         "translation": translation,
         "prioritize_frequency": bool(prioritize_frequency),
+        "scheduler_dict": scheduler.to_dict(),
     }
 
     if True or "@" in user_id:  # TODO:
-        settings_table.put_item(Item=new_settings)
+        settings_table.put_item(Item=convert_types(new_settings, "Decimal"))
         debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
-    user_data = settings.get("user_data", [])  # Retrieve from previous settings
     bible = get_bible_translation(
         translation=translation, 
         bool_counts=prioritize_frequency, 
@@ -401,7 +432,8 @@ def save_settings(
         "settings": new_settings,
         "bible": bible,
         "eligible_references": get_eligible_references(bible, selected_testaments, set(selected_books), chapter_map),
-        "user_data": user_data
+        "user_data": user_data,
+        "scheduler": scheduler,
     })
     debug(f"Settings saved for user_id={user_id}")
 
@@ -504,6 +536,19 @@ def submit(
     ## Calculate score based on verse distance
     distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
 
+    ## Retrieve scheduler and card
+    scheduler = settings["scheduler"]
+
+    verse_dict = settings["bible"][book][chapter][verse]["user_data"]
+    card = verse_dict.get("card")
+    if not card:
+        ## Attempt to retrieve from dict; otherwise initialize
+        card_dict = verse_dict.get("card_dict")
+        card = Card.from_dict(card_dict) if card_dict else Card()
+    
+    ## Review
+    card, review_log = scheduler.review_card(card, rating)
+
     ## Write to DynamoDB if logged in to email
     result = {
         "user_id": user_id,
@@ -515,14 +560,16 @@ def submit(
         "distance": Decimal(str(distance)),
         "timer": Decimal(str(round(float(timer), 3))),
         "rating": rating,
+        "card_dict": card.to_dict(),
+        "due_str": str(card.due),
     }
     if True or "@" in user_id:  # TODO:
-        results_table.put_item(Item=result)
+        results_table.put_item(Item=convert_types(result, "Decimal"))
         debug("✅ Result saved to DynamoDB")
     
     ## Update user data for verse
     settings["user_data"].append(result)
-    settings["bible"][book][chapter][verse]["user_data"] = result
+    settings["bible"][book][chapter][verse]["user_data"] = result | {"card": card}
     cache.set_cached_user_settings(user_id, settings)
 
     context = {
@@ -532,7 +579,7 @@ def submit(
         "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
         "score": score,
         "timer": round(float(timer), 1),
-        "rating": rating,
+        "rating": rating_map.get(rating, "Unknown"),
     }
 
     return templates.TemplateResponse("result.html", context)
