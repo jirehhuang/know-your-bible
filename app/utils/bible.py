@@ -26,7 +26,7 @@ AVAIL_TRANSLATIONS = {
 }
 
 
-def get_bible_translation(translation: str = "esv", bool_counts: bool = True) -> dict:
+def get_bible_translation(translation: str = "esv", bool_counts: bool = True, user_data = []) -> dict:
     """
     Load the specified Bible translation, optionally with verse usage counts.
 
@@ -62,6 +62,9 @@ def get_bible_translation(translation: str = "esv", bool_counts: bool = True) ->
                             print(f"[WARNING] Skipping missing verse: {book} {chapter}:{verse}")
         else:
             print(f"[WARNING] verse_counts.json not found at {counts_path}")
+    
+    if user_data:
+        add_user_data(user_data, bible)
 
     return bible
 
@@ -111,11 +114,7 @@ def add_user_data(user_data: list, bible: dict):
             verse = verse.lstrip("0")
 
             if book in bible and chapter in bible[book] and verse in bible[book][chapter]:
-                if user_id not in bible[book][chapter][verse]:
-                    bible[book][chapter][verse][user_id] = item
-                else:
-                    ## Optional: merge/update if desired
-                    bible[book][chapter][verse][user_id] = item
+                bible[book][chapter][verse]["user_data"] = item
             else:
                 print(f"[WARNING] Verse not found in Bible: {reference}")
         except Exception as e:
