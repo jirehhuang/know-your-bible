@@ -553,11 +553,11 @@ def submit(
     ## Retrieve scheduler and card
     scheduler = settings["scheduler"]
 
-    verse_dict = settings["bible"][book][chapter][verse]["user_data"]
-    card = verse_dict.get("card")
+    verse_user_data = settings["bible"][book][chapter][verse].get("user_data", {})
+    card = verse_user_data.get("card")
     if not card:
         ## Attempt to retrieve from dict; otherwise initialize
-        card_dict = verse_dict.get("card_dict")
+        card_dict = verse_user_data.get("card_dict")
         card = Card.from_dict(card_dict) if card_dict else Card()
     
     ## Review
