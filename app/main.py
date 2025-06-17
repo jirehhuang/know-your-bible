@@ -1,9 +1,9 @@
 import os
 import re
-import json
 import random
 import boto3
 import logging
+import app.utils.cache as cache
 from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,17 +16,13 @@ from math import floor
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
-from collections import defaultdict
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS
 
-## Global attribute store
-attr = defaultdict(dict)
-attr["DEBUG_MODE"] = True  # Global debug mode flag
-attr["BIBLE"] = get_bible_translation()
+DEBUG_MODE = True  # Global debug mode flag
 B = 1  # TODO: Make adjustable parameter
 
 def debug(msg):
-    if attr.get("DEBUG_MODE", False):
+    if DEBUG_MODE:
         print(f"[DEBUG] {msg}")
 
 debug("🟢 main.py is loading")
@@ -84,40 +80,40 @@ def convert_decimals(obj):
         return int(obj) if obj % 1 == 0 else float(obj)
     return obj
 
-def initialize_user_settings(user_id: str, default_books=None, default_chapters=None):
-    """
-    Initialize default settings and eligible_references for a new user.
-    If settings already exist in the table, does nothing.
-    """
-    default_books = default_books or []
-    default_chapters = default_chapters or {}
+def load_user_settings_from_db(user_id: str):
+    response = settings_table.get_item(Key={"user_id": user_id})
+    settings = convert_decimals(response.get("Item", {}))
+    
+    books = set(settings.get("books", []))
+    chapters = settings.get("chapters", {})
 
-    exists = settings_table.get_item(Key={"user_id": user_id}).get("Item")
-    if exists:
-        debug(f"Settings already exist for user_id={user_id}, skipping initialization")
-        return
+    ## Load derived data
+    translation = settings.get("translation", "esv")  # Default to ESV
+    bible = get_bible_translation(translation=translation, bool_counts=True)
+    eligible_references = get_eligible_references(bible, books, chapters)
 
-    item = {
-        "user_id": user_id,
-        "books": default_books,
-        "chapters": default_chapters,
+    ## Cache full user config
+    full_settings = {
+        "settings": settings,
+        "bible": bible,
+        "eligible_references": eligible_references,
     }
 
-    settings_table.put_item(Item=item)
-    debug(f"Initialized default settings for user_id={user_id}")
+    cache.set_cached_user_settings(user_id, full_settings)
 
-def get_eligible_references(selected_books, selected_chapters, upweight=["John MacArthur", "John Piper"]):
-    BIBLE = attr["BIBLE"]
+    return full_settings
+
+def get_eligible_references(bible, selected_books, selected_chapters, upweight=["John MacArthur", "John Piper"]):
     eligible_references = []
 
     def add_verse_with_weight(book, chapter, verse):
-        weight = BIBLE[book][chapter][verse].get("weight", 1)
+        weight = bible[book][chapter][verse].get("weight", 1)
         for upweight_key in upweight:
-            weight += BIBLE[book][chapter][verse].get(upweight_key, 0)
+            weight += bible[book][chapter][verse].get(upweight_key, 0)
         eligible_references.append((book, chapter, verse, weight))
 
-    for book in BIBLE:
-        chapters = BIBLE[book]
+    for book in bible:
+        chapters = bible[book]
         if book in selected_books:
             for chapter in chapters:
                 for verse in chapters[chapter]:
@@ -132,10 +128,10 @@ def get_eligible_references(selected_books, selected_chapters, upweight=["John M
                     debug(f"⚠️ Chapter {ch_str} not found in {book}")
 
     if not eligible_references:
-        debug("⚠️ No eligible references found, falling back to full Bible")
-        for book in BIBLE:
-            for chapter in BIBLE[book]:
-                for verse in BIBLE[book][chapter]:
+        debug("⚠️ No eligible references found, falling back to full bible")
+        for book in bible:
+            for chapter in bible[book]:
+                for verse in bible[book][chapter]:
                     add_verse_with_weight(book, chapter, verse)
 
     # debug(f"eligible_references: {json.dumps(eligible_references, indent=2)}")
@@ -155,44 +151,22 @@ def weighted_sample(choices):
     return choices[-1]
 
 ## Get random verse reference using weights
-def get_random_reference(user_id):
-    ## Ensure attr entry exists
-    if user_id not in attr:
-        attr[user_id] = {}
-
-    ## If not cached, load settings and generate
-    if "eligible_references" not in attr[user_id]:
-        debug(f"Loading settings for user_id={user_id}")
-        response = settings_table.get_item(Key={"user_id": user_id})
-        saved = response.get("Item")
-
-        if saved:
-            selected_books = set(saved.get("books", []))
-            selected_chapters = saved.get("chapters", {})
-        else:
-            debug(f"No settings found for user_id={user_id}, initializing defaults")
-            selected_books = set()
-            selected_chapters = {}
-
-        attr[user_id]["eligible_references"] = get_eligible_references(selected_books, selected_chapters)
-
-    eligible_references = attr[user_id]["eligible_references"]
+def get_random_reference(settings):
+    eligible_references = settings["eligible_references"]
     book, chapter, verse, weight = weighted_sample(eligible_references)
     debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
-
     return book, chapter, verse
 
-def get_surrounding_verses(book, chapter, verse):
+def get_surrounding_verses(bible, book, chapter, verse):
     debug(f"Getting verses surrounding: {book} {chapter}:{verse}")
-    BIBLE = attr["BIBLE"]
-    chapters = BIBLE[book]
+    chapters = bible[book]
     chapter_keys = sorted(chapters, key=lambda k: int(k))
     curr_verses = chapters[str(chapter)]
     verse_keys = sorted(curr_verses, key=lambda k: int(k))
 
     def get_text(ch, v):
         try:
-            return BIBLE[book][str(ch)][str(v)]["text"]
+            return bible[book][str(ch)][str(v)]["text"]
         except KeyError:
             return ""
 
@@ -233,20 +207,17 @@ def get_surrounding_verses(book, chapter, verse):
     curr_text = get_text(chapter, verse)
     return prev_text, curr_text, next_text
 
-def match_book_name(input_text):
-    BIBLE = attr["BIBLE"]
+def match_book_name(bible, input_text):
     input_text = input_text.strip().lower()
-    matches = [book for book in BIBLE if book.lower().startswith(input_text)]
+    matches = [book for book in bible if book.lower().startswith(input_text)]
     match = matches[0] if len(matches) == 1 else None
     if match:
         debug(f"Matched {input_text} to book: {match}")
     return match
 
-def calculate_score(submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v):
-    BIBLE = attr["BIBLE"]
-
+def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v):
     def flat_index(book, chapter, verse):
-        chapters = BIBLE[book]
+        chapters = bible[book]
         total = 0
         for ch in sorted(chapters, key=lambda x: int(x)):
             if int(ch) < int(chapter):
@@ -270,9 +241,21 @@ def get_user_id(request: Request) -> str:
         debug(f"Authenticated user: {user_id}")
         return user_id
     
-    new_user_id = str(uuid6())
+    # new_user_id = str(uuid6())
+    new_user_id = str(datetime.now(timezone.utc).isoformat())
     debug(f"Anonymous session: {new_user_id}")
     return new_user_id
+
+def get_user_id_settings(request: Request) -> str:
+    user_id = get_user_id(request)
+    settings = cache.get_cached_user_settings(user_id) or load_user_settings_from_db(user_id)
+    return user_id, settings
+
+@app.middleware("http")
+async def add_user_settings(request: Request, call_next):
+    user_id, settings = get_user_id_settings(request)
+    request.state.settings = settings
+    return await call_next(request)
 
 @app.get("/login")
 async def login(request: Request):
@@ -293,8 +276,8 @@ async def auth(request: Request):
     response = RedirectResponse(url="/")
     response.set_cookie("user_id", email)
 
-    ## Initialize user settings if not already present
-    initialize_user_settings(user_id=email)
+    ## Preload and cache user settings
+    load_user_settings_from_db(user_id=email)
 
     return response
 
@@ -306,13 +289,12 @@ def logout():
 
 @app.get("/settings", response_class=HTMLResponse)
 def get_settings(request: Request):
-    user_id = get_user_id(request)
-    debug(f"[GET] /settings for user_id={user_id}")
-    response = settings_table.get_item(Key={"user_id": user_id})
-    saved = convert_decimals(response.get("Item", {}))
+    user_id, settings = get_user_id_settings(request)
 
-    selected_books = saved.get("books", [])
-    selected_chapters = saved.get("chapters", {})
+    debug(f"[GET] /settings for user_id={user_id}")
+
+    selected_books = settings.get("settings", {}).get("books", [])
+    selected_chapters = settings.get("settings", {}).get("chapters", {})
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -330,8 +312,8 @@ def save_settings(
     selected_books: list[str] = Form([]),
     selected_chapters: list[str] = Form([]),
 ):
-    global attr
     user_id = get_user_id(request)
+
     debug(f"[POST] /settings - user_id={user_id}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
@@ -344,28 +326,25 @@ def save_settings(
 
     debug(f"Parsed chapter map: {chapter_map}")
 
-    if user_id:
-        ## Save new settings
-        item = {
-            "user_id": user_id,
-            "books": selected_books,
-            "chapters": chapter_map,
-        }
+    item = {
+        "user_id": user_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "books": selected_books,
+        "chapters": chapter_map,
+    }
+    ## Save new settings if logged in to email
+    if "@" in user_id:
         settings_table.put_item(Item=item)
-        debug(f"Settings saved for user_id={user_id}")
+        debug(f"Settings saved to DynamoDB for user_id={user_id}")
 
-        ## Ensure attr entry exists
-        if user_id not in attr:
-            attr[user_id] = {}
-
-        ## Retrieve preferred Bible translation
-        ## TODO:
-        attr["BIBLE"] = get_bible_translation(translation="esv", bool_counts=True)
-
-        ## TODO: Add user data to Bible
-
-        ## Cache new eligible references
-        attr[user_id]["eligible_references"] = get_eligible_references(set(selected_books), chapter_map)
+    ## Set cached user settings
+    bible = get_bible_translation(translation=item.get("translation", "esv"), bool_counts=True)
+    cache.set_cached_user_settings(user_id, {
+        "settings": item,
+        "bible": bible,
+        "eligible_references": get_eligible_references(bible, set(selected_books), chapter_map),
+    })
+    debug(f"Settings saved for user_id={user_id}")
 
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie("user_id", user_id)
@@ -377,7 +356,10 @@ def home(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
 
 def render_review(request, user_id, book, chapter, verse, start_timer=0, error=None):
-    prev_text, curr_text, next_text = get_surrounding_verses(book, chapter, verse)
+    user_id, settings = get_user_id_settings(request)
+    bible = settings["bible"]
+
+    prev_text, curr_text, next_text = get_surrounding_verses(bible, book, chapter, verse)
     reference = f"{book} {chapter}:{verse}"
 
     context = {
@@ -400,9 +382,12 @@ def render_review(request, user_id, book, chapter, verse, start_timer=0, error=N
 
 @app.get("/review", response_class=HTMLResponse)
 def review(request: Request):
-    user_id = get_user_id(request)
+    user_id, settings = get_user_id_settings(request)
+
     debug(f"[GET] /review - user_id={user_id}")
-    book, chapter, verse = get_random_reference(user_id)
+
+    book, chapter, verse = get_random_reference(settings)
+
     return render_review(request, user_id, book, chapter, verse)
 
 @app.post("/submit", response_class=HTMLResponse)
@@ -415,8 +400,9 @@ def submit(
     verse: str = Form(...),
     timer: float = Form(0.0)
 ):
-    BIBLE = attr["BIBLE"]
-    user_id = get_user_id(request)
+    user_id, settings = get_user_id_settings(request)
+    bible = settings["bible"]
+
     debug(f"[POST] /submit - user_id={user_id}")
     debug(f"Submitted: {submitted_ref}, Actual: {actual_ref}")
 
@@ -432,7 +418,7 @@ def submit(
                              error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
 
     submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
-    matched_book = match_book_name(submitted_book_raw)
+    matched_book = match_book_name(bible, submitted_book_raw)
     if not matched_book:
         debug("❌ Invalid or ambiguous book")
         return render_review(request, user_id, book, actual_ch, actual_v, timer,
@@ -441,13 +427,13 @@ def submit(
     submitted_ch = submitted_ch_str
     submitted_v = submitted_v_str
 
-    ## Check if book, chapter, and verse exist in BIBLE
+    ## Check if book, chapter, and verse exist in bible
     if (
-        matched_book not in BIBLE
-        or int(submitted_ch) < 1 or int(submitted_ch) > len(BIBLE[matched_book])
-        or int(submitted_v) < 1 or int(submitted_v) > len(BIBLE[matched_book][submitted_ch])
+        matched_book not in bible
+        or int(submitted_ch) < 1 or int(submitted_ch) > len(bible[matched_book])
+        or int(submitted_v) < 1 or int(submitted_v) > len(bible[matched_book][submitted_ch])
     ):
-        debug("❌ Reference does not exist in BIBLE data")
+        debug("❌ Reference does not exist in bible data")
         return render_review(request, user_id, book, actual_ch, actual_v, timer,
                              error=f"Reference not found: '{matched_book} {submitted_ch}:{submitted_v}'.")
 
@@ -457,11 +443,10 @@ def submit(
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
-    distance, score = calculate_score(matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
+    distance, score = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v)
 
-    ## Write to DynamoDB if logged in
-    if user_id:
-
+    ## Write to DynamoDB if logged in to email
+    if "@" in user_id:
         results_table.put_item(Item={
             "user_id": user_id,
             "id": str(uuid6()),
@@ -478,7 +463,7 @@ def submit(
         "request": request,
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
-        "actual_text": BIBLE[book][str(actual_ch)][str(actual_v)]["text"],
+        "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
         "score": score,
         "timer": round(float(timer), 1),
     }
