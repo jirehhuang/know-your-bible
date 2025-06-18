@@ -191,10 +191,15 @@ def update_weights(bible, eligible_references, upweight=["John MacArthur", "John
         interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
         secs2due = (now - due).seconds
 
-        ## 10x weight for every 1% overdue
-        weight_factor = 10 ** min(log10(sys.float_info.max), secs2due / interval_secs)
+        ## Adjust weight by factor
+        max_exponent = 308
+        try:
+            ## 10x weight for every 1% overdue
+            weight_factor = 10 ** min(max_exponent, secs2due / interval_secs)
+            weight = min(10 ** max_exponent, weight * weight_factor)
+        except (OverflowError, ZeroDivisionError):
+            weight = 10 ** max_exponent
 
-        weight = min(sys.float_info.max, weight * weight_factor)
         return weight
     
     eligible_references = [
