@@ -587,11 +587,11 @@ def submit(
         "reference": actual_ref,
         "submitted": normalized_submitted_ref,
         "score": score,
-        "distance": Decimal(str(distance)),
-        "timer": Decimal(str(round(float(timer), 3))),
+        "distance": distance,
+        "timer": round(float(timer), 3),
         "rating": rating,
         "card_dict": card.to_dict(),
-        "due_str": str(card.due),
+        "due_str": card.due.isoformat(),
         "interval_secs": (card.due - card.last_review).seconds,
     }
     if True or "@" in user_id:  # TODO:
