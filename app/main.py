@@ -119,6 +119,7 @@ def load_user_settings_from_db(user_id: str):
         )
         for page in page_iterator:
             user_data.extend(page.get("Items", []))
+        user_data = convert_types(user_data, "float")
     except Exception as e:
         debug(f"⚠️ Error loading user data for {user_id}: {e}")
         user_data = []
