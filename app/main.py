@@ -345,6 +345,73 @@ def get_user_id_settings(request: Request) -> str:
     settings = cache.get_cached_user_settings(user_id) or load_user_settings_from_db(user_id)
     return user_id, settings
 
+def get_user_stats(settings):
+    now = datetime.now(timezone.utc)
+    user_id = settings.get("settings", {}).get("user_id", "")
+    user_data = settings.get("user_data", [])
+
+    if "@" not in user_id or not user_data:
+        user_stats = {
+            "date_time": now,
+            "verses_reviewed": 0,
+            "total_score": int(0),
+            "total_points": 0,
+        }
+        return user_stats
+    
+    ## Reviewed and total score
+    verses_reviewed = 0
+    total_score = 0
+    bible = settings["bible"]
+    for book in bible:
+        for chapter in bible[book]:
+            for verse in bible[book][chapter]:
+                verse_score = bible[book][chapter][verse].get("user_data", {}).get("score", -1)
+                if verse_score >= 0:
+                    verses_reviewed += 1
+                    total_score += verse_score
+    
+    ## Total points
+    total_points = sum(item.get("score", 0) for item in user_data)
+
+    ## Return
+    user_stats = {
+        "date_time": now,
+        "verses_reviewed": verses_reviewed,
+        "total_score": total_score,
+        "total_points": total_points,
+    }
+
+    return user_stats
+
+def get_review_data(settings):
+    user_id = settings.get("settings", {}).get("user_id", "")
+    scheduler = settings.get("scheduler", None)
+
+    if "@" not in user_id or not scheduler:
+        return []
+    
+    ## Reviewed and total score
+    review_data = []
+    bible = settings["bible"]
+    for book in bible:
+        for chapter in bible[book]:
+            for verse in bible[book][chapter]:
+                verse_dict = bible[book][chapter][verse]
+                card = verse_dict.get("user_data", {}).get("card", None)
+                if not card:
+                    card_dict = verse_dict.get("user_data", {}).get("card_dict", {})
+                    card = Card.from_dict(card_dict) if card_dict else None
+                if card:
+                    review_data.append({
+                        "verse": f"{book} {chapter}:{verse}",
+                        "time": verse_dict["user_data"]["timer"],
+                        "distance": verse_dict["user_data"]["distance"],
+                        "retrievability": scheduler.get_card_retrievability(card),
+                    })
+
+    return review_data
+
 @app.middleware("http")
 async def add_user_settings(request: Request, call_next):
     user_id, settings = get_user_id_settings(request)
@@ -394,6 +461,9 @@ def get_settings(request: Request):
     selected_selector = settings.get("settings", {}).get("selector", "random")
     selected_priority = settings.get("settings", {}).get("priority", "weighted")
 
+    user_stats = get_user_stats(settings)
+    review_data = get_review_data(settings)
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "user_id": user_id,
@@ -407,6 +477,8 @@ def get_settings(request: Request):
         "selected_books": selected_books,
         "selected_chapters": selected_chapters,
         "selected_testaments": selected_testaments,
+        "stats": user_stats,
+        "review_data": review_data,
     })
 
 @app.post("/settings", response_class=HTMLResponse)

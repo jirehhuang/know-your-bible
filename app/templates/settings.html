@@ -25,6 +25,71 @@
 
     <br><br>
 
+    {% if "@" in user_id %}
+      <!-- Show stats table and scatter plot -->
+       <h3 style="margin-bottom: 0.5em;">{{ user_id }}</h3>
+
+      <section style="margin-bottom: 2em;">
+        <table style="font-size: 0.9em; color: #333; border-collapse: collapse;">
+          <tr>
+            <td style="padding-right: 1.5em;">Datetime:</td>
+            <td id="last-reviewed-time">{{ stats.date_time or '' }}</td>
+          </tr>
+          <tr>
+            <td style="padding-right: 1.5em;">Verses Reviewed:</td><td>{{ stats.verses_reviewed | int }}</td>
+          </tr>
+          <tr>
+            <td style="padding-right: 1.5em;">Total Score:</td><td>{{ stats.total_score | int }}</td>
+          </tr>
+          <tr>
+            <td style="padding-right: 1.5em;">Total Points:</td><td>{{ stats.total_points | int }}</td>
+          </tr>
+        </table>
+      </section>
+
+      {% if review_data %}
+        <h3 style="margin-bottom: 0.5em;">Review Progress</h3>
+        <div id="review-scatter" style="height: 400px;"></div>
+
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script>
+          const reviewData = {{ review_data | tojson }};
+          const trace = {
+            x: reviewData.map(r => r.time),
+            y: reviewData.map(r => r.distance),
+            text: reviewData.map(r => r.verse),
+            mode: 'markers',
+            type: 'scatter',
+            marker: {
+              color: reviewData.map(r => r.retrievability),
+              colorscale: [
+                [0.0, 'rgb(220, 20, 60)'],   // Red
+                [0.5, 'rgb(255, 215, 0)'],   // Yellow (Gold)
+                [1.0, 'rgb(34, 139, 34)']    // Green
+              ],
+              cmin: 0,
+              cmax: 1,
+              colorbar: { title: 'Retrievability' },
+              size: 8,
+              opacity: 0.8,
+            },
+            hovertemplate:
+              "<b>%{text}</b><br>" +
+              "Time: %{x}s<br>" +
+              "Distance: %{y}<br>" +
+              "Retrievability: %{marker.color:.2f}<extra></extra>"
+          };
+
+          Plotly.newPlot('review-scatter', [trace], {
+            margin: { t: 10 },
+            xaxis: { title: 'Time (s)' },
+            yaxis: { title: 'Distance' },
+            responsive: true,
+          });
+        </script>
+      {% endif %}
+    {% endif %}
+
     <h3>Review Settings</h3>
 
     <label for="translation">Bible Translation:</label>
@@ -53,7 +118,7 @@
       <option value="greedy" {% if selector == "greedy" %}selected{% endif %}>Greedy</option>
     </select>
 
-    <p id="method-description" style="font-style: italic; color: #444; margin-bottom: 2em;"></p>
+    <p id="method-description" style="font-style: italic; color: #444; margin-top: 1.5em; margin-bottom: 2em;"></p>
 
     <h3>Review Selection</h3>
 
@@ -127,6 +192,41 @@
     <br>
     <button type="submit" style="font-size: 1em;">Save</button>
   </form>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const elem = document.getElementById("last-reviewed-time");
+    if (!elem || !elem.textContent) return;
+
+    try {
+      const iso = elem.textContent.trim();
+      const dt = new Date(iso);
+      
+      // Try local timezone first
+      let options = {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        hour12: false
+      };
+      
+      // Format as YYYY-MM-DD HH:mm:ss
+      const parts = new Intl.DateTimeFormat(undefined, options).formatToParts(dt);
+      const date = `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}-${parts.find(p => p.type === 'day').value}`;
+      const time = `${parts.find(p => p.type === 'hour').value}:${parts.find(p => p.type === 'minute').value}:${parts.find(p => p.type === 'second').value}`;
+      
+      elem.textContent = `${date} ${time}`;
+    } catch (e) {
+      // If error or unknown timezone, fallback to Pacific Time
+      try {
+        const dt = new Date(elem.textContent.trim());
+        const pacificTime = new Date(dt.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+        elem.textContent = pacificTime.toISOString().slice(0, 19).replace("T", " ");
+      } catch {
+        // Fallback silently if formatting fails
+      }
+    }
+  });
+  </script>
 
   <script>
     const translationSelect = document.getElementById("translation");
