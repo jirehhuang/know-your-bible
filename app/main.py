@@ -288,17 +288,19 @@ def match_book_name(bible, input_text):
     return match
 
 def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
+    bible_books = list(bible.keys())
+
     def flat_index(book, chapter, verse):
-        chapters = bible[book]
-        total = 0
-        for ch in sorted(chapters, key=lambda x: int(x)):
-            if int(ch) < int(chapter):
-                total += len(chapters[ch])
-            elif int(ch) == int(chapter):
-                for v in sorted(chapters[ch], key=lambda x: int(x)):
-                    if int(v) < int(verse):
-                        total += 1
-        return total
+        index = 0
+        for b in bible_books:
+            chapters = bible[b]
+            for ch in sorted(chapters, key=lambda x: int(x)):
+                verses = chapters[ch]
+                for v in sorted(verses, key=lambda x: int(x)):
+                    if (b == book) and (int(ch) == int(chapter)) and (int(v) == int(verse)):
+                        return index
+                    index += 1
+        return index
 
     idx_sub = flat_index(submitted_book, submitted_ch, submitted_v)
     idx_act = flat_index(actual_book, actual_ch, actual_v)
