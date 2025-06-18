@@ -32,7 +32,7 @@
       <section style="margin-bottom: 2em;">
         <table style="font-size: 0.9em; color: #333; border-collapse: collapse;">
           <tr>
-            <td style="padding-right: 1.5em;">Datetime:</td>
+            <td style="padding-right: 1.5em;">Timestamp:</td>
             <td id="last-reviewed-time">{{ stats.date_time or '' }}</td>
           </tr>
           <tr>
@@ -239,7 +239,7 @@
       const priority = prioritySelect.value;
       const selector = selectorSelect.value;
 
-      let desc = `Using verse text from the ${translation} translation. `;
+      let desc = `Using text from the ${translation} translation. `;
 
       if (selector === "random") {
         desc += "Randomly select verses from review selection with probability proportional to weight, ";
