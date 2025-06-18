@@ -188,7 +188,7 @@ def update_weights(bible, eligible_references, upweight=["John MacArthur", "John
 
         ## Adjust by due date, if any
         due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
-        interval_secs = verse_dict.get("user_data", {}).get("interval_secs", 1)
+        interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
         secs2due = (now - due).seconds
 
         ## 10x weight for every 1% overdue
