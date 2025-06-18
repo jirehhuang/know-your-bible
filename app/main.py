@@ -189,7 +189,7 @@ def update_weights(bible, eligible_references, upweight=["John MacArthur", "John
         ## Adjust by due date, if any
         due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
         interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
-        secs2due = (now - due).seconds
+        secs2due = (now - due).total_seconds()
 
         ## Adjust weight by factor
         max_exponent = 308
@@ -655,6 +655,8 @@ def submit(
     
     ## Review
     card, review_log = scheduler.review_card(card, rating)
+    print(f"card.due = {card.due}, card.last_review = {card.last_review}")
+    print((card.due - card.last_review))
 
     ## Write to DynamoDB if logged in to email
     result = {
@@ -669,7 +671,7 @@ def submit(
         "rating": rating,
         "card_dict": card.to_dict(),
         "due_str": card.due.isoformat(),
-        "interval_secs": (card.due - card.last_review).seconds,
+        "interval_secs": (card.due - card.last_review).total_seconds(),
     }
     if True or "@" in user_id:  # TODO:
         results_table.put_item(Item=convert_types(result, "Decimal"))
