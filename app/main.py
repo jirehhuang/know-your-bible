@@ -337,7 +337,7 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
 def get_user_id(request: Request) -> str:
     user_id = request.cookies.get("user_id")
     if user_id:
-        debug(f"Authenticated user: {user_id}")
+        debug(f"Identified user: {user_id}")
         return user_id
     
     # new_user_id = str(uuid6())
@@ -654,9 +654,8 @@ def submit(
         card = Card.from_dict(card_dict) if card_dict else Card()
     
     ## Review
+    card.step = int(card.step)  # Ensure type
     card, review_log = scheduler.review_card(card, rating)
-    print(f"card.due = {card.due}, card.last_review = {card.last_review}")
-    print((card.due - card.last_review))
 
     ## Write to DynamoDB if logged in to email
     result = {
