@@ -174,36 +174,36 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
     
     return eligible_references
 
-def update_weights(bible, eligible_references, upweight=["John MacArthur", "John Piper"]):
+def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upweight=["John MacArthur", "John Piper"]):
+    ## Initial weight "prior"
+    verse_dict = bible[book][chapter][verse]
+    weight = verse_dict.get("weight", 1)
+
+    ## Add counts, if included with bool_counts
+    for upweight_key in upweight:
+        weight += verse_dict.get(upweight_key, 0)
+
+    ## Adjust by due date, if any
+    due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
+    interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
+    secs2due = (now - due).total_seconds()
+
+    ## Adjust weight by factor
+    max_exponent = 308
+    try:
+        ## 10x weight for every 1% overdue
+        weight_factor = 10 ** min(max_exponent, secs2due / interval_secs)
+        weight = min(10 ** max_exponent, weight * weight_factor)
+    except (OverflowError, ZeroDivisionError):
+        weight = 10 ** max_exponent
+
+    return weight
+
+def update_weights(bible, eligible_references):
     now = datetime.now(timezone.utc)
-
-    def get_weight(book, chapter, verse):
-        ## Initial weight "prior"
-        verse_dict = bible[book][chapter][verse]
-        weight = verse_dict.get("weight", 1)
-
-        ## Add counts, if included with bool_counts
-        for upweight_key in upweight:
-            weight += verse_dict.get(upweight_key, 0)
-
-        ## Adjust by due date, if any
-        due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
-        interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
-        secs2due = (now - due).total_seconds()
-
-        ## Adjust weight by factor
-        max_exponent = 308
-        try:
-            ## 10x weight for every 1% overdue
-            weight_factor = 10 ** min(max_exponent, secs2due / interval_secs)
-            weight = min(10 ** max_exponent, weight * weight_factor)
-        except (OverflowError, ZeroDivisionError):
-            weight = 10 ** max_exponent
-
-        return weight
     
     eligible_references = [
-        (book, chapter, verse, get_weight(book, chapter, verse)) 
+        (book, chapter, verse, get_weight(bible, book, chapter, verse, now)) 
         for (book, chapter, verse, _) in eligible_references
     ]
     return eligible_references
@@ -222,7 +222,6 @@ def weighted_sample(choices):
 
 ## Get random verse reference using weights
 def get_random_reference(settings):
-
     ## Refresh weights before sampling
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
 
@@ -392,6 +391,7 @@ def get_user_stats(settings):
 def get_review_data(settings):
     user_id = settings.get("settings", {}).get("user_id", "")
     scheduler = settings.get("scheduler", None)
+    now = datetime.now(timezone.utc)
 
     if "@" not in user_id or not scheduler:
         return []
@@ -412,6 +412,8 @@ def get_review_data(settings):
                         "verse": f"{book} {chapter}:{verse}",
                         "time": verse_dict["user_data"]["timer"],
                         "distance": verse_dict["user_data"]["distance"],
+                        "due": verse_dict.get("user_data", {}).get("due_str", now.isoformat()),
+                        "log10_weight": log10(get_weight(bible, book, chapter, verse, now)),
                         "retrievability": scheduler.get_card_retrievability(card),
                     })
 

@@ -54,6 +54,36 @@
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <script>
           const reviewData = {{ review_data | tojson }};
+
+          const log10Weights = reviewData.map(r => r.log10_weight);
+          const retrievabilities = reviewData.map(r => r.retrievability);
+          const sizes = log10Weights.map(w => Math.min(w * 10, 100));
+
+          const minRet = Math.min(...retrievabilities);
+          const maxRet = Math.max(...retrievabilities);
+          const midRet = (minRet + maxRet) / 2;
+
+          // Format due date as yyyy-mm-dd hh:mm:ss in user's time zone or fallback to Pacific
+          const formattedDueDates = reviewData.map(r => {
+            try {
+              const date = new Date(r.due);
+              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
+              const localDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
+
+              const pad = n => n.toString().padStart(2, '0');
+              const yyyy = localDate.getFullYear();
+              const mm = pad(localDate.getMonth() + 1);
+              const dd = pad(localDate.getDate());
+              const hh = pad(localDate.getHours());
+              const min = pad(localDate.getMinutes());
+              const ss = pad(localDate.getSeconds());
+
+              return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+            } catch {
+              return 'Invalid date';
+            }
+          });
+
           const trace = {
             x: reviewData.map(r => r.time),
             y: reviewData.map(r => r.distance),
@@ -61,28 +91,33 @@
             mode: 'markers',
             type: 'scatter',
             marker: {
-              color: reviewData.map(r => r.retrievability),
+              color: retrievabilities,
               colorscale: [
-                [0.0, 'rgb(220, 20, 60)'],   // Red
-                [0.5, 'rgb(255, 215, 0)'],   // Yellow (Gold)
-                [1.0, 'rgb(34, 139, 34)']    // Green
+                [0, 'rgb(220, 20, 60)'],
+                [(midRet - minRet) / (maxRet - minRet), 'rgb(255, 215, 0)'],
+                [1, 'rgb(34, 139, 34)']
               ],
-              cmin: 0,
-              cmax: 1,
+              cmin: minRet,
+              cmax: maxRet,
               colorbar: { title: 'Retrievability' },
-              size: 8,
+              size: sizes,
+              sizemode: 'diameter',
+              sizemin: 4,
               opacity: 0.8,
             },
+            customdata: reviewData.map((r, i) => [log10Weights[i], formattedDueDates[i]]),
             hovertemplate:
               "<b>%{text}</b><br>" +
               "Time: %{x}s<br>" +
               "Distance: %{y}<br>" +
-              "Retrievability: %{marker.color:.2f}<extra></extra>"
+              "Due: %{customdata[1]}<extra></extra><br>" +
+              "Retrievability: %{marker.color:.2f}<br>" +
+              "log₁₀(weight): %{customdata[0]:.2f}<br>"
           };
 
           Plotly.newPlot('review-scatter', [trace], {
             margin: { t: 10 },
-            xaxis: { title: 'Time (s)' },
+            xaxis: { title: 'Seconds' },
             yaxis: { title: 'Distance' },
             responsive: true,
           });
