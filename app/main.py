@@ -408,6 +408,7 @@ def get_review_data(settings):
                     card_dict = verse_dict.get("user_data", {}).get("card_dict", {})
                     card = Card.from_dict(card_dict) if card_dict else None
                 if card:
+                    translation = settings.get("settings", {}).get("translation", "esv")
                     review_data.append({
                         "verse": f"{book} {chapter}:{verse}",
                         "time": verse_dict["user_data"]["timer"],
@@ -415,7 +416,7 @@ def get_review_data(settings):
                         "due": verse_dict.get("user_data", {}).get("due_str", now.isoformat()),
                         "log10_weight": log10(get_weight(bible, book, chapter, verse, now)),
                         "retrievability": scheduler.get_card_retrievability(card),
-                        "url": f"https://ref.ly/{book} {chapter}:{verse};{settings.get("settings", {}).get("translation", "esv")}?t=biblia",
+                        "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
                     })
 
     return review_data
