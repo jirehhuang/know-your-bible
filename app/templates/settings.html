@@ -105,7 +105,7 @@
               sizemin: 4,
               opacity: 0.8,
             },
-            customdata: reviewData.map((r, i) => [log10Weights[i], formattedDueDates[i]]),
+            customdata: reviewData.map((r, i) => [log10Weights[i], formattedDueDates[i], r.url]),
             hovertemplate:
               "<b>%{text}</b><br>" +
               "Time: %{x}s<br>" +
@@ -120,6 +120,12 @@
             xaxis: { title: 'Seconds' },
             yaxis: { title: 'Distance' },
             responsive: true,
+          });
+          document.getElementById('review-scatter').on('plotly_click', function(data) {
+            const url = data.points[0].customdata[2];
+            if (url) {
+              window.open(url, '_blank');
+            }
           });
         </script>
       {% endif %}

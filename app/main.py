@@ -415,6 +415,7 @@ def get_review_data(settings):
                         "due": verse_dict.get("user_data", {}).get("due_str", now.isoformat()),
                         "log10_weight": log10(get_weight(bible, book, chapter, verse, now)),
                         "retrievability": scheduler.get_card_retrievability(card),
+                        "url": f"https://ref.ly/{book} {chapter}:{verse};{settings.get("settings", {}).get("translation", "esv")}?t=biblia",
                     })
 
     return review_data
