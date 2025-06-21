@@ -18,6 +18,7 @@ from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 from fsrs import Scheduler, Card, Rating, ReviewLog
+from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
 
 DEBUG_MODE = True  # Global debug mode flag
@@ -73,11 +74,21 @@ oauth.register(
 )
 
 ## Ease rating
-rating_map = {
+RATING_MAP = {
     1: "Again",
     2: "Hard",
     3: "Good",
     4: "Easy"
+}
+
+ORDINAL_MAP = {
+    "first": "1", "1st": "1", "one": "1",
+    "second": "2", "2nd": "2", "two": "2",
+    "third": "3", "3rd": "3", "three": "3",
+    "fourth": "4", "four": "4", "fifth": "5", "five": "5",
+    "six": "6", "sixth": "6", "seven": "7", "seventh": "7",
+    "eight": "8", "eighth": "8", "nine": "9", "ninth": "9",
+    "ten": "10", "tenth": "10", "eleven": "11", "twelve": "12"
 }
 
 def convert_types(data, to="float"):
@@ -284,13 +295,92 @@ def get_surrounding_verses(bible, book, chapter, verse):
     curr_text = get_text(chapter, verse)
     return prev_text, curr_text, next_text
 
+def normalize_natural_number(s: str) -> int:
+    s = s.lower().replace("-", " ").strip()
+    if s in ORDINAL_MAP:
+        return int(ORDINAL_MAP[s])
+    try:
+        return w2n.word_to_num(s)
+    except ValueError:
+        return int(s) if s.isdigit() else None
+
+def normalize_book_input(input_text):
+    """Convert 'First Peter' → '1 Peter', normalize spacing"""
+    input_text = input_text.lower().replace("-", " ").strip()
+    for word, digit in ORDINAL_MAP.items():
+        input_text = re.sub(rf'\b{word}\b', digit, input_text)
+    input_text = re.sub(r"\s+", " ", input_text)
+    return input_text
+
 def match_book_name(bible, input_text):
-    input_text = input_text.strip().lower()
-    matches = [book for book in bible if book.lower().startswith(input_text)]
-    match = matches[0] if len(matches) == 1 else None
-    if match:
-        debug(f"Matched {input_text} to book: {match}")
-    return match
+    input_text_norm = normalize_book_input(input_text)
+
+    book_map = {
+        normalize_book_input(book): book
+        for book in bible
+    }
+
+    ## Exact match
+    if input_text_norm in book_map:
+        match = book_map[input_text_norm]
+        debug(f"Exact match: '{input_text}' → '{match}'")
+        return match, None
+
+    ## Prefix match
+    candidates = [book for norm, book in book_map.items() if norm.startswith(input_text_norm)]
+    if len(candidates) == 1:
+        debug(f"Prefix match: '{input_text}' → '{candidates[0]}'")
+        return candidates[0], None
+    if len(candidates) > 1:
+        debug(f"Ambiguous prefix match: '{input_text}' → {candidates}")
+        return None, candidates
+
+    ## Contains match
+    candidates = [book for norm, book in book_map.items() if input_text_norm in norm]
+    if len(candidates) == 1:
+        debug(f"Contains match: '{input_text}' → '{candidates[0]}'")
+        return candidates[0], None
+    if len(candidates) > 1:
+        debug(f"Ambiguous contains match: '{input_text}' → {candidates}")
+        return None, candidates
+
+    debug(f"❌ No match for book name: '{input_text}'")
+    return None, None
+
+def parse_natural_reference(bible, submitted_ref: str):
+    submitted_ref = submitted_ref.lower().replace("-", " ")
+    submitted_ref = re.sub(r"\s+", " ", submitted_ref).strip()
+
+    for word, digit in ORDINAL_MAP.items():
+        submitted_ref = re.sub(rf"\b{word}\b", digit, submitted_ref)
+
+    if 'verse' not in submitted_ref:
+        return None, None, None, None
+
+    try:
+        book_chapter_part, verse_raw = submitted_ref.rsplit("verse", 1)
+        verse_raw = verse_raw.strip()
+        tokens = book_chapter_part.strip().split()
+        if len(tokens) < 2:
+            return None, None, None, None
+
+        chapter_raw = tokens[-1]
+        book_raw = " ".join(tokens[:-1])
+
+        matched_book, candidates = match_book_name(bible, book_raw)
+        if candidates:
+            return "AMBIGUOUS", candidates, None, None
+        if not matched_book:
+            return None, None, None, None
+
+        chapter = normalize_natural_number(chapter_raw)
+        verse = normalize_natural_number(verse_raw)
+        if not chapter or not verse:
+            return None, None, None, None
+
+        return matched_book, str(chapter), str(verse), None
+    except Exception:
+        return None, None, None, None
 
 def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
     bible_books = list(bible.keys())
@@ -635,21 +725,31 @@ def submit(
     actual_v = verse
 
     ## Parse submitted reference
-    match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
-    if not match:
-        debug("❌ Invalid format")
-        return render_review(request, user_id, book, actual_ch, actual_v, timer,
-                             error=f"Invalid format: '{submitted_ref}'. Please try again (e.g., Gen 1:1).")
+    matched_book, submitted_ch, submitted_v, ambiguous_candidates = parse_natural_reference(bible, submitted_ref)
 
-    submitted_book_raw, submitted_ch_str, submitted_v_str = match.groups()
-    matched_book = match_book_name(bible, submitted_book_raw)
+    if matched_book == "AMBIGUOUS":
+        debug(f"❌ Ambiguous book name: candidates={ambiguous_candidates or []}")
+        return render_review(
+            request, user_id, book, actual_ch, actual_v, timer,
+            error=f"Ambiguous book name: '{submitted_ref}'. Did you mean {', '.join(ambiguous_candidates or [])}?"
+        )
+
+    ## Fallback to strict Book 1:1 parsing
     if not matched_book:
-        debug("❌ Invalid or ambiguous book")
-        return render_review(request, user_id, book, actual_ch, actual_v, timer,
-                             error=f"Unknown or ambiguous book: '{submitted_book_raw}'. Please try again.")
+        match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
+        if match:
+            submitted_book_raw, submitted_ch, submitted_v = match.groups()
+            matched_book, candidates = match_book_name(bible, submitted_book_raw)
+            if candidates:
+                return render_review(
+                    request, user_id, book, actual_ch, actual_v, timer,
+                    error=f"Ambiguous book name: '{submitted_book_raw}'. Did you mean {', '.join(candidates or [])}?"
+                )
 
-    submitted_ch = submitted_ch_str
-    submitted_v = submitted_v_str
+    if not matched_book:
+        debug("❌ Could not parse natural reference")
+        return render_review(request, user_id, book, actual_ch, actual_v, timer,
+                            error=f"Could not understand reference: '{submitted_ref}'. Try 'Genesis 1:1' or 'First John one verse two'.")
 
     ## Check if book, chapter, and verse exist in bible
     if (
@@ -714,7 +814,7 @@ def submit(
         "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
         "score": score,
         "timer": round(float(timer), 1),
-        "rating": rating_map.get(rating, "Unknown"),
+        "rating": RATING_MAP.get(rating, "Unknown"),
     }
 
     return templates.TemplateResponse("result.html", context)
