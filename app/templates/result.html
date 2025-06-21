@@ -54,12 +54,29 @@
       {% endfor %}
     </div>
 
-    <p><strong>Score:</strong> {{ score }}/100</p>
-    <p><strong>Timer:</strong> {{ formatted_timer }}</p>
-    <p><strong>Ease:</strong> {{ rating }}</p>
+    <table style="margin: 0 auto; border-spacing: 0.5em 0.75em;">
+      <tr>
+        <td style="text-align: right; white-space: nowrap;"><strong>Score:</strong></td>
+        <td style="text-align: left;">{{ score }}/100</td>
+      </tr>
+      <tr>
+        <td style="text-align: right; white-space: nowrap;"><strong>Timer:</strong></td>
+        <td style="text-align: left;">{{ formatted_timer }}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right; white-space: nowrap;"><strong>Ease:</strong></td>
+        <td style="text-align: left;">{{ rating }}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right; white-space: nowrap;"><strong>Your Answer:</strong></td>
+        <td style="text-align: left;">{{ submitted_ref }}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right; white-space: nowrap;"><strong>Reference:</strong></td>
+        <td style="text-align: left;">{{ actual_ref }}</td>
+      </tr>
+    </table>
 
-    <p><strong>Your Answer:</strong> {{ submitted_ref }}</p>
-    <p><strong>Reference:</strong> {{ actual_ref }}</p>
     <br>
     <p>{{ actual_text }}</p>
     <br><br>
