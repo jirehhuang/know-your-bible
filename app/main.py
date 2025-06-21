@@ -350,22 +350,46 @@ def match_book_name(bible, input_text):
 def parse_natural_reference(bible, submitted_ref: str):
     submitted_ref = submitted_ref.lower().replace("-", " ")
     submitted_ref = re.sub(r"\s+", " ", submitted_ref).strip()
+    submitted_ref = re.sub(r'\s*:\s*', ':', submitted_ref)  # Remove whitespace around colon
+    submitted_ref = submitted_ref.replace("chapter", "")  # Remove optional chapter
 
+    # Normalize ordinals
     for word, digit in ORDINAL_MAP.items():
         submitted_ref = re.sub(rf"\b{word}\b", digit, submitted_ref)
 
-    if 'verse' not in submitted_ref:
-        return None, None, None, None
+    # ✅ Case 1: verbose style like "1 peter 1 verse 1"
+    if "verse" in submitted_ref:
+        try:
+            book_chapter_part, verse_raw = submitted_ref.rsplit("verse", 1)
+            verse_raw = verse_raw.strip()
+            tokens = book_chapter_part.strip().split()
+            if len(tokens) < 2:
+                return None, None, None, None
 
-    try:
-        book_chapter_part, verse_raw = submitted_ref.rsplit("verse", 1)
-        verse_raw = verse_raw.strip()
-        tokens = book_chapter_part.strip().split()
-        if len(tokens) < 2:
+            chapter_raw = tokens[-1]
+            book_raw = " ".join(tokens[:-1])
+
+            matched_book, candidates = match_book_name(bible, book_raw)
+            if candidates:
+                return "AMBIGUOUS", candidates, None, None
+            if not matched_book:
+                return None, None, None, None
+
+            chapter = normalize_natural_number(chapter_raw)
+            verse = normalize_natural_number(verse_raw)
+            if not chapter or not verse:
+                return None, None, None, None
+
+            return matched_book, str(chapter), str(verse), None
+        except Exception:
             return None, None, None, None
 
-        chapter_raw = tokens[-1]
-        book_raw = " ".join(tokens[:-1])
+    # ✅ Case 2: colon style like "1 peter 1:1"
+    match = re.match(r"^(?P<book_part>.+?) (?P<chapter>\d+):(?P<verse>\d+)$", submitted_ref)
+    if match:
+        book_raw = match.group("book_part").strip()
+        chapter_raw = match.group("chapter")
+        verse_raw = match.group("verse")
 
         matched_book, candidates = match_book_name(bible, book_raw)
         if candidates:
@@ -373,14 +397,9 @@ def parse_natural_reference(bible, submitted_ref: str):
         if not matched_book:
             return None, None, None, None
 
-        chapter = normalize_natural_number(chapter_raw)
-        verse = normalize_natural_number(verse_raw)
-        if not chapter or not verse:
-            return None, None, None, None
+        return matched_book, chapter_raw, verse_raw, None
 
-        return matched_book, str(chapter), str(verse), None
-    except Exception:
-        return None, None, None, None
+    return None, None, None, None
 
 def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
     bible_books = list(bible.keys())
