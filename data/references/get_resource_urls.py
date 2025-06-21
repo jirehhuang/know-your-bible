@@ -15,8 +15,8 @@ DG_URL = "https://www.desiringgod.org"
 GTY_URL = "https://www.gty.org"
 START_YEAR = datetime.now().year
 END_YEAR = 1969
-RESOURCES_JSON = "data/resources.json"
-DATA_DIR = "data/temp_year_page"
+RESOURCES_JSON = "data/references/resources.json"
+DATA_DIR = "data/references/temp_year_page"
 
 os.makedirs("data", exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)

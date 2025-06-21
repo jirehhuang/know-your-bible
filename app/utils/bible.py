@@ -47,7 +47,7 @@ def get_bible_translation(translation: str = "esv", bool_counts: bool = True, us
     print(f"[DEBUG] Loaded Bible from {path}")
 
     if bool_counts:
-        counts_path = Path("data/verse_counts.json")
+        counts_path = Path("data/references/verse_counts.json")
         if counts_path.exists():
             with open(counts_path, "r") as f:
                 counts = json.load(f)
@@ -133,7 +133,7 @@ BOOK_TO_TESTAMENT = {book: "OT" for book in OT_BOOKS} | {book: "NT" for book in 
 
 ## Build list of all authors from verse_counts.json
 AUTHORS = set()
-verse_counts_path = Path("data/verse_counts.json")
+verse_counts_path = Path("data/references/verse_counts.json")
 if verse_counts_path.exists():
     with open(verse_counts_path, "r") as f:
         data = json.load(f)
@@ -147,7 +147,7 @@ else:
 AUTHORS = sorted(AUTHORS)
 
 
-def get_top_n(n=10, authors=["all"], counts_file="data/verse_counts.json"):
+def get_top_n(n=10, authors=["all"], counts_file="data/references/verse_counts.json"):
     """
     Get the top N verses with the highest mention counts.
 

@@ -20,8 +20,8 @@ from nltk.tokenize import sent_tokenize
 
 ## Constants
 BIBLE_BOOKS = set(BIBLE.keys())
-TEMP_URL_DIR = 'data/temp_url'
-RESOURCE_JSON = 'data/resources.json'
+TEMP_URL_DIR = 'data/references/temp_url'
+RESOURCE_JSON = 'data/references/resources.json'
 
 os.makedirs(TEMP_URL_DIR, exist_ok=True)
 

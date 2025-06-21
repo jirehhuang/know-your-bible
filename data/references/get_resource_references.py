@@ -291,8 +291,8 @@ if __name__ == "__main__":
     test_cases(example_cases)  # This will raise AssertionError if a test fails
 
     ## If all tests passed
-    resources_path = Path("data/resources.json")
+    resources_path = Path("data/references/resources.json")
     update_references_from_sentences(resources_path)
 
-    verse_counts_path = Path("data/verse_counts.json")
+    verse_counts_path = Path("data/references/verse_counts.json")
     compile_verse_counts(resources_path, verse_counts_path)
