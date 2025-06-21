@@ -388,6 +388,26 @@ def get_user_stats(settings):
 
     return user_stats
 
+def pretty_sec(secs):
+    bool_overdue = bool(secs < 0)
+    secs = abs(int(secs))
+    parts = []
+
+    days, secs = divmod(secs, 86400)
+    hours, secs = divmod(secs, 3600)
+    minutes, secs = divmod(secs, 60)
+
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0 or not parts:
+        parts.append(f"{secs}s")
+
+    return ("-" if bool_overdue else "") + " ".join(parts)
+
 def get_review_data(settings):
     user_id = settings.get("settings", {}).get("user_id", "")
     scheduler = settings.get("scheduler", None)
@@ -409,11 +429,13 @@ def get_review_data(settings):
                     card = Card.from_dict(card_dict) if card_dict else None
                 if card:
                     translation = settings.get("settings", {}).get("translation", "esv")
+                    due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
                     review_data.append({
                         "verse": f"{book} {chapter}:{verse}",
                         "time": verse_dict["user_data"]["timer"],
                         "distance": verse_dict["user_data"]["distance"],
-                        "due": verse_dict.get("user_data", {}).get("due_str", now.isoformat()),
+                        "due": due_str,
+                        "due_in": pretty_sec((datetime.fromisoformat(due_str) - now).total_seconds()),
                         "log10_weight": log10(get_weight(bible, book, chapter, verse, now)),
                         "retrievability": scheduler.get_card_retrievability(card),
                         "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
