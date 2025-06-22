@@ -54,30 +54,30 @@
       {% endfor %}
     </div>
 
-    <table style="margin: 0 auto; border-spacing: 0.5em 0.75em; table-layout: fixed; width: 40em;">
+    <table style="margin: 0 auto; border-collapse: separate; border-spacing: 0.5em 0.75em;">
       <colgroup>
-        <col style="width: 20em;">
-        <col style="width: 20em;">
+        <col style="width: 50%;">
+        <col style="width: 50%;">
       </colgroup>
       <tr>
-        <td style="text-align: right; white-space: nowrap;"><strong>Score:</strong></td>
-        <td style="text-align: left;">{{ score }}/100</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Score:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ score }} / 100</td>
       </tr>
       <tr>
-        <td style="text-align: right; white-space: nowrap;"><strong>Timer:</strong></td>
-        <td style="text-align: left;">{{ formatted_timer }}</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Timer:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ formatted_timer }}</td>
       </tr>
       <tr>
-        <td style="text-align: right; white-space: nowrap;"><strong>Ease:</strong></td>
-        <td style="text-align: left;">{{ rating }}</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Ease:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ rating }}</td>
       </tr>
       <tr>
-        <td style="text-align: right; white-space: nowrap;"><strong>Your Answer:</strong></td>
-        <td style="text-align: left;">{{ submitted_ref }}</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Your Answer:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ submitted_ref }}</td>
       </tr>
       <tr>
-        <td style="text-align: right; white-space: nowrap;"><strong>Reference:</strong></td>
-        <td style="text-align: left;">{{ actual_ref }}</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Reference:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ actual_ref }}</td>
       </tr>
     </table>
 
