@@ -519,6 +519,7 @@ def pretty_sec(secs):
 
 def get_review_data(settings):
     user_id = settings.get("settings", {}).get("user_id", "")
+    translation = settings.get("settings", {}).get("translation", "esv")
     scheduler = settings.get("scheduler", None)
     now = datetime.now(timezone.utc)
 
@@ -537,7 +538,6 @@ def get_review_data(settings):
                     card_dict = verse_dict.get("user_data", {}).get("card_dict", {})
                     card = Card.from_dict(card_dict) if card_dict else None
                 if card:
-                    translation = settings.get("settings", {}).get("translation", "esv")
                     due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
                     review_data.append({
                         "verse": f"{book} {chapter}:{verse}",
