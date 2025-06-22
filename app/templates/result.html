@@ -81,35 +81,30 @@
       </tr>
     </table>
 
-    <br>
-    <p>{{ actual_text }}</p>
     <br><br>
-
     <form action="/continue" method="post">
       <button id="continue-button" type="submit" autofocus>Continue</button>
     </form>
-
     <br><br>
-    <p>
-       <strong>Chapter:</strong> {{ actual_ch }}
-    </p>
-    <br>
 
-    <strong>TSK</strong>
-    {% if tsk_data %}
-      <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em; table-layout: fixed; width: 40em;">
-        <colgroup>
-          <col style="width: 10em;">
-          <col style="width: 30em;">
-        </colgroup>
+    <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em;">
+      <tr>
+        <td style="text-align: right; vertical-align: top; max-width: 10em; width: auto;">{{ actual_ref }}</td>
+        <td style="text-align: left; vertical-align: top; max-width: 30em; width: auto;">{{ actual_text }}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right; vertical-align: top; max-width: 10em; width: auto;"><strong>Chapter:</strong></td>
+        <td style="text-align: left; vertical-align: top; max-width: 30em; width: auto;">{{ actual_ch }}</td>
+      </tr>
+      {% if tsk_data %}
         {% for entry in tsk_data %}
           <tr>
-            <td style="text-align: right; white-space: nowrap; vertical-align: top;"><strong>{{ entry.word }}:</strong></td>
-            <td style="text-align: left; vertical-align: top;">{{ entry.references | join(", ") }}</td>
+            <td style="text-align: right; vertical-align: top; max-width: 10em; width: auto;"><strong>{{ entry.word }}:</strong></td>
+            <td style="text-align: left; vertical-align: top; max-width: 30em; width: auto;">{{ entry.references | join(", ") }}</td>
           </tr>
         {% endfor %}
-      </table>
-    {% endif %}
+      {% endif %}
+    </table>
 
   </div>
 {% endblock %}
