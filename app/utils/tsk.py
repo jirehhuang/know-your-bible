@@ -30,7 +30,7 @@ TSK_LOOKUP = defaultdict(list)
 
 
 def load_tsk_data():
-    with open(TSK_PATH) as f:
+    with open(TSK_PATH, "r", encoding="latin-1") as f:
         for line in f:
             parts = line.strip().split("\t")
             if len(parts) != 6:
