@@ -54,7 +54,11 @@
       {% endfor %}
     </div>
 
-    <table style="margin: 0 auto; border-spacing: 0.5em 0.75em;">
+    <table style="margin: 0 auto; border-spacing: 0.5em 0.75em; table-layout: fixed; width: 40em;">
+      <colgroup>
+        <col style="width: 20em;">
+        <col style="width: 20em;">
+      </colgroup>
       <tr>
         <td style="text-align: right; white-space: nowrap;"><strong>Score:</strong></td>
         <td style="text-align: left;">{{ score }}/100</td>
@@ -84,6 +88,28 @@
     <form action="/continue" method="post">
       <button id="continue-button" type="submit" autofocus>Continue</button>
     </form>
+
+    <br><br>
+    <p>
+       <strong>Chapter:</strong> {{ actual_ch }}
+    </p>
+    <br>
+
+    <strong>TSK</strong>
+    {% if tsk_data %}
+      <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em; table-layout: fixed; width: 40em;">
+        <colgroup>
+          <col style="width: 10em;">
+          <col style="width: 30em;">
+        </colgroup>
+        {% for entry in tsk_data %}
+          <tr>
+            <td style="text-align: right; white-space: nowrap; vertical-align: top;"><strong>{{ entry.word }}:</strong></td>
+            <td style="text-align: left; vertical-align: top;">{{ entry.references | join(", ") }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% endif %}
 
   </div>
 {% endblock %}

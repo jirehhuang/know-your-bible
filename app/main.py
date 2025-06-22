@@ -1,6 +1,5 @@
 import os
 import re
-import sys
 import logging
 import boto3
 import random
@@ -20,6 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fsrs import Scheduler, Card, Rating, ReviewLog
 from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
+from app.utils.tsk import get_tsk_for_ref
 
 DEBUG_MODE = True  # Global debug mode flag
 
@@ -826,15 +826,21 @@ def submit(
     settings["user_data"].append(result)
     settings["bible"][book][chapter][verse]["user_data"] = result | {"card": card}
     cache.set_cached_user_settings(user_id, settings)
+    
+    ## Prepare context
+    tsk_data = get_tsk_for_ref(actual_ref)
+    ch_verses = len(settings["bible"][book][chapter])
 
     context = {
         "request": request,
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
+        "actual_ch": f"{book} {actual_ch}:1-{ch_verses}",
         "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
         "score": score,
         "timer": round(float(timer), 1),
         "rating": RATING_MAP.get(rating, "Unknown"),
+        "tsk_data": tsk_data,
     }
 
     return templates.TemplateResponse("result.html", context)
