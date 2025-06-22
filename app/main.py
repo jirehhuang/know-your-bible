@@ -799,7 +799,8 @@ def submit(
         card = Card.from_dict(card_dict) if card_dict else Card()
     
     ## Review
-    card.step = int(card.step)  # Ensure type
+    if card.step:
+        card.step = int(card.step)  # Ensure type
     card, review_log = scheduler.review_card(card, rating)
 
     ## Write to DynamoDB if logged in to email
