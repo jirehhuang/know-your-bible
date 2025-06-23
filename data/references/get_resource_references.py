@@ -3,10 +3,10 @@ import sys
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
-from example_cases import example_cases
 from difflib import get_close_matches
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from data.references.example_cases import example_cases
 from app.utils.bible import BIBLE
 
 BIBLE_BOOKS = set(BIBLE.keys())
