@@ -30,22 +30,22 @@
        <h3 style="margin-bottom: 0.5em;">{{ user_id }}</h3>
 
       <section style="margin-bottom: 2em;">
-        <table style="font-size: 0.9em; color: #333; border-collapse: collapse;">
+        <table style="border-collapse: separate; border-spacing: 0em 0.5em; margin-top: 1em; margin-bottom: 1em; margin-left: 1em;">
           <tr>
-            <td style="padding-right: 1.5em;">Timestamp:</td>
+            <td style="padding-right: 1.5em;"><strong>Timestamp:</strong></td>
             <td id="last-reviewed-time">{{ stats.date_time or '' }}</td>
           </tr>
           <tr>
-            <td style="padding-right: 1.5em;">Verses Reviewed:</td><td>{{ stats.verses_reviewed | int }}</td>
+            <td style="padding-right: 1.5em;"><strong>Verses Reviewed:</strong></td><td>{{ stats.verses_reviewed | int }}</td>
           </tr>
           <tr>
-            <td style="padding-right: 1.5em;">Total Score:</td><td>{{ stats.total_score | int }}</td>
+            <td style="padding-right: 1.5em;"><strong>Total Score:</strong></td><td>{{ stats.total_score | int }}</td>
           </tr>
           <tr>
-            <td style="padding-right: 1.5em;">Total Points:</td><td>{{ stats.total_points | int }}</td>
+            <td style="padding-right: 1.5em;"><strong>Total Points:</strong></td><td>{{ stats.total_points | int }}</td>
           </tr>
           <tr>
-            <td style="padding-right: 1.5em;">Past 30 Days:</td><td>{{ stats.points_30days | int }}</td>
+            <td style="padding-right: 1.5em;"><strong>Past 30 Days:</strong></td><td>{{ stats.points_30days | int }}</td>
           </tr>
         </table>
       </section>
@@ -192,7 +192,7 @@
       <option value="greedy" {% if selector == "greedy" %}selected{% endif %}>Greedy</option>
     </select>
 
-    <p id="method-description" style="font-style: italic; color: #444; margin-top: 1.5em; margin-bottom: 2em;"></p>
+    <p id="method-description" style="font-style: italic; margin-top: 1.5em; margin-bottom: 2em;"></p>
 
     <h3>Review Selection</h3>
 
