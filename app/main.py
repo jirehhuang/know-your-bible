@@ -232,10 +232,35 @@ def weighted_sample(choices):
     ## Fallback to last item in case of rounding issues
     return choices[-1]
 
+def get_top_n(eligible_references, n):
+    """
+    Prints and returns the top n references based on weight.
+
+    Parameters:
+        eligible_references (list): List of tuples (book, chapter, verse, weight).
+        n (int): Number of top references to return.
+
+    Returns:
+        list: Top n references sorted by descending weight.
+    """
+    top_refs = sorted(eligible_references, key=lambda x: x[3], reverse=True)[:n]
+
+    print("\nTop Verses by Weight:")
+    print("-" * 35)
+    for book, chapter, verse, weight in top_refs:
+        ref_str = f"{book} {chapter}:{verse}"
+        print(f"{ref_str:<20}  Weight: {weight:>7.4f}")
+    print("-" * 35)
+
+    return top_refs
+
 ## Get random verse reference using weights
 def get_random_reference(settings):
     ## Refresh weights before sampling
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
+
+    if False:  # Optional debugging
+        get_top_n(eligible_references, 20)
 
     selector = settings.get("settings", {}).get("selector", "random")
     if selector == "random":
