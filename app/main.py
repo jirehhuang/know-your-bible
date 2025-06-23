@@ -20,6 +20,7 @@ from fsrs import Scheduler, Card, Rating, ReviewLog
 from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
 from app.utils.tsk import get_tsk_for_ref
+from app.utils.harmony import get_harmony_entries_for_verse
 
 DEBUG_MODE = True  # Global debug mode flag
 
@@ -829,6 +830,7 @@ def submit(
     
     ## Prepare context
     tsk_data = get_tsk_for_ref(actual_ref)
+    harmony_data = get_harmony_entries_for_verse(actual_ref)
     ch_verses = len(settings["bible"][book][chapter])
 
     context = {
@@ -841,6 +843,7 @@ def submit(
         "timer": round(float(timer), 1),
         "rating": RATING_MAP.get(rating, "Unknown"),
         "tsk_data": tsk_data,
+        "harmony_data": harmony_data,
     }
 
     return templates.TemplateResponse("result.html", context)

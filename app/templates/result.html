@@ -87,20 +87,35 @@
     </form>
     <br><br>
 
+    {% set label_col_width = '15em' %}
+    {% set value_col_width = '30em' %}
     <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em;">
       <tr>
-        <td style="text-align: right; vertical-align: top; max-width: 10em; width: auto;">{{ actual_ref }}</td>
-        <td style="text-align: left; vertical-align: top; max-width: 30em; width: auto;">{{ actual_text }}</td>
+        <td style="text-align: right; vertical-align: top; max-width: {{ label_col_width }}; width: auto;">{{ actual_ref }}</td>
+        <td style="text-align: left; vertical-align: top; max-width: {{ value_col_width}}; width: auto;">{{ actual_text }}</td>
       </tr>
       <tr>
-        <td style="text-align: right; vertical-align: top; max-width: 10em; width: auto;"><strong>Chapter:</strong></td>
-        <td style="text-align: left; vertical-align: top; max-width: 30em; width: auto;">{{ actual_ch }}</td>
+        <td style="text-align: right; vertical-align: top; max-width: {{ label_col_width }}; width: auto;"><strong>Chapter:</strong></td>
+        <td style="text-align: left; vertical-align: top; max-width: {{ value_col_width}}; width: auto;">{{ actual_ch }}</td>
       </tr>
-      {% if tsk_data %}
-        {% for entry in tsk_data %}
+      {% if harmony_data %}
+        {% for harmony_entry in harmony_data %}
           <tr>
-            <td style="text-align: right; vertical-align: top; max-width: 10em; width: auto;"><strong>{{ entry.word }}:</strong></td>
-            <td style="text-align: left; vertical-align: top; max-width: 30em; width: auto;">{{ entry.references | join(", ") }}</td>
+            <td style="text-align: right; vertical-align: top; max-width: {{ label_col_width }}; width: auto;"><strong>Harmony:</strong></td>
+            <td style="text-align: left; vertical-align: top; max-width: {{ value_col_width}}; width: auto;">
+              <div style="margin-bottom: 0.5em;">
+                <em>{{ harmony_entry.category or 'Category' }}: {{ harmony_entry.subject or 'Subject' }}</em>
+              </div>
+              {{ harmony_entry.references | join(", ") }}
+            </td>
+          </tr>
+        {% endfor %}
+      {% endif %}
+      {% if tsk_data %}
+        {% for tsk_entry in tsk_data %}
+          <tr>
+            <td style="text-align: right; vertical-align: top; max-width: {{ label_col_width }}; width: auto;"><strong>{{ tsk_entry.word }}:</strong></td>
+            <td style="text-align: left; vertical-align: top; max-width: {{ value_col_width}}; width: auto;">{{ tsk_entry.references | join(", ") }}</td>
           </tr>
         {% endfor %}
       {% endif %}
