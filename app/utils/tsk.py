@@ -44,13 +44,18 @@ def load_tsk_data():
 load_tsk_data()
 
 
+def parse_standard_ref(ref: str):
+    tokens = ref.strip().split()
+    chapter_verse = tokens[-1]
+    book = " ".join(tokens[:-1])
+    chapter, verse = map(int, chapter_verse.split(":"))
+
+    return book, chapter, verse
+
 def get_tsk_for_ref(ref: str):
     """Takes 'John 3:16' or '1 Corinthians 13:4' and returns TSK entries for that verse."""
     try:
-        tokens = ref.strip().split()
-        chapter_verse = tokens[-1]
-        book = " ".join(tokens[:-1])
-        chapter, verse = map(int, chapter_verse.split(":"))
+        book, chapter, verse = parse_standard_ref(ref)
     except (ValueError, IndexError):
         return []
 
