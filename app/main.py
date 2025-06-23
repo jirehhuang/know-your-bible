@@ -868,7 +868,7 @@ def submit(
         card = Card.from_dict(card_dict) if card_dict else Card()
     
     ## Review
-    if card.step:
+    if card.step is not None:
         card.step = int(card.step)  # Ensure type
     card, review_log = scheduler.review_card(card, rating)
 
