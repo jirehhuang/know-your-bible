@@ -22,7 +22,7 @@ NT_BOOKS = [
 ## Where translations/{translation}.json exists
 AVAIL_TRANSLATIONS = {
     path.stem
-    for path in Path("translations").glob("*.json")
+    for path in Path("data/translations").glob("*.json")
 }
 
 
@@ -37,7 +37,7 @@ def get_bible_translation(translation: str = "esv", bool_counts: bool = True, us
     Returns:
         dict: Loaded Bible data.
     """
-    path = Path(f"translations/{translation.lower()}.json")
+    path = Path(f"data/translations/{translation.lower()}.json")
     if not path.exists():
         print(f"[WARNING] Bible file not found: {path}")
         return {}
