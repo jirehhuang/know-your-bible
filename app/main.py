@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fsrs import Scheduler, Card, Rating, ReviewLog
 from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
-from app.utils.tsk import get_tsk_for_ref
+from app.utils.tsk import parse_standard_ref, get_tsk_for_ref
 from app.utils.harmony import get_harmony_entries_for_verse
 
 DEBUG_MODE = True  # Global debug mode flag
@@ -437,6 +437,13 @@ def parse_natural_reference(bible, submitted_ref: str):
 def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
     bible_books = list(bible.keys())
 
+    ## Calculate stars
+    stars = int(
+        (actual_book==submitted_book) + 
+        (actual_book==submitted_book and actual_ch==submitted_ch) + 
+        (actual_book==submitted_book and actual_ch==submitted_ch and actual_v==submitted_v)
+    )
+
     def flat_index(book, chapter, verse):
         index = 0
         for b in bible_books:
@@ -472,8 +479,8 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
     else:
         rating = 1
     
-    debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, rating: {rating})")
-    return distance, score, rating
+    debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, stars: {stars}, rating: {rating})")
+    return stars, distance, score, rating
 
 def get_user_id(request: Request) -> str:
     user_id = request.cookies.get("user_id")
@@ -500,23 +507,40 @@ def get_user_stats(settings):
         user_stats = {
             "date_time": now,
             "verses_reviewed": 0,
-            "total_score": int(0),
+            "total_stars": 0,
+            "total_score": 0,
             "total_points": 0,
+            "points_30days": 0,
         }
         return user_stats
     
     ## Reviewed and total score
     verses_reviewed = 0
+    total_stars = 0
     total_score = 0
     bible = settings["bible"]
     for book in bible:
         for chapter in bible[book]:
             for verse in bible[book][chapter]:
-                verse_score = bible[book][chapter][verse].get("user_data", {}).get("score", -1)
+                verse_data = bible[book][chapter][verse].get("user_data", {})
+                verse_score = verse_data.get("score", -1)
                 if verse_score >= 0:
                     verses_reviewed += 1
                     total_score += verse_score
-    
+
+                    ## Compute stars if necessary
+                    verse_stars = verse_data.get("stars", None)
+                    if not verse_stars:
+                        submitted_book, submitted_ch, submitted_v = parse_standard_ref(verse_data["submitted"])
+                        verse_stars = int(
+                            (book==submitted_book) + 
+                            (book==submitted_book and chapter==str(submitted_ch)) +
+                            (book==submitted_book and chapter==str(submitted_ch) and verse==str(submitted_v))
+                        )
+                        if False:  # Optional debugging
+                            debug(f"actual={book} {chapter}:{verse}, submitted={verse_data["submitted"]}, parsed={submitted_book} {submitted_ch}:{submitted_v}, stars={verse_stars}")
+                    total_stars += verse_stars
+
     ## Total points
     total_points = sum(item.get("score", 0) for item in user_data)
 
@@ -534,6 +558,7 @@ def get_user_stats(settings):
     user_stats = {
         "date_time": now,
         "verses_reviewed": verses_reviewed,
+        "total_stars": total_stars,
         "total_score": total_score,
         "total_points": total_points,
         "points_30days": points_30days,
@@ -830,7 +855,7 @@ def submit(
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
-    distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
+    stars, distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
 
     ## Retrieve scheduler and card
     scheduler = settings["scheduler"]
@@ -856,6 +881,7 @@ def submit(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "reference": actual_ref,
         "submitted": normalized_submitted_ref,
+        "stars": stars,
         "score": score,
         "distance": distance,
         "timer": round(float(timer), 3),
@@ -884,6 +910,7 @@ def submit(
         "actual_ref": actual_ref,
         "actual_ch": f"{book} {actual_ch}:1-{ch_verses}",
         "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
+        "stars": stars,
         "score": score,
         "timer": round(float(timer), 1),
         "rating": RATING_MAP.get(rating, "Unknown"),

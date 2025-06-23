@@ -23,24 +23,6 @@
 {% block content %}
   <div class="result-container">
 
-    {% set submitted_book = submitted_ref.split()[0].lower() %}
-    {% set submitted_chapter = submitted_ref.split()[1].split(":")[0] %}
-    {% set submitted_verse = submitted_ref.split()[1].split(":")[1] %}
-
-    {% set actual_book = actual_ref.split()[0].lower() %}
-    {% set actual_chapter = actual_ref.split()[1].split(":")[0] %}
-    {% set actual_verse = actual_ref.split()[1].split(":")[1] %}
-
-    {% if submitted_book == actual_book and submitted_chapter == actual_chapter and submitted_verse == actual_verse %}
-      {% set stars = 3 %}
-    {% elif submitted_book == actual_book and submitted_chapter == actual_chapter %}
-      {% set stars = 2 %}
-    {% elif submitted_book == actual_book %}
-      {% set stars = 1 %}
-    {% else %}
-      {% set stars = 0 %}
-    {% endif %}
-
     {% set minutes = (timer // 60) | int %}
     {% set seconds = (timer % 60) | int %}
     {% set formatted_timer = "%02d:%02d"|format(minutes, seconds) %}
