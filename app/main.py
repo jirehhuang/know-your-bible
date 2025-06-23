@@ -204,10 +204,16 @@ def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upwe
     max_exponent = 308
     try:
         ## 10x weight for every 1% overdue
-        weight_factor = 10 ** min(max_exponent, secs2due / interval_secs)
+        weight_factor = 10 ** min(max_exponent, secs2due)  # TODO: Normalize by interval_secs
         weight = min(10 ** max_exponent, weight * weight_factor)
     except (OverflowError, ZeroDivisionError):
         weight = 10 ** max_exponent
+    
+    weight = max(weight, 1)
+
+    ## Optional debugging
+    if False and book=="Titus" and str(chapter)=="3" and str(verse)=="10":
+        debug(f"{book} {chapter}:{verse} - interval_secs={pretty_sec(interval_secs)}, secs2due={pretty_sec(secs2due)}, weight={weight}")
 
     return weight
 
