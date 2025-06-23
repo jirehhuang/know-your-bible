@@ -373,7 +373,7 @@ def parse_natural_reference(bible, submitted_ref: str):
 
             matched_book, candidates = match_book_name(bible, book_raw)
             if candidates:
-                return "AMBIGUOUS", candidates, None, None
+                return "AMBIGUOUS", None, None, candidates
             if not matched_book:
                 return None, None, None, None
 
@@ -395,7 +395,7 @@ def parse_natural_reference(bible, submitted_ref: str):
 
         matched_book, candidates = match_book_name(bible, book_raw)
         if candidates:
-            return "AMBIGUOUS", candidates, None, None
+            return "AMBIGUOUS", None, None, candidates
         if not matched_book:
             return None, None, None, None
 
