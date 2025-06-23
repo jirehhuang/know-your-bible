@@ -753,6 +753,32 @@ def save_settings(
     response.set_cookie("user_id", user_id)
     return response
 
+@app.post("/delete_user_data")
+async def delete_user_data(request: Request, user_id: str = Form(...)):
+    debug("Deleting user settings")
+    
+    ## Delete from settings_table (no sort key)
+    settings_items = settings_table.query(
+        KeyConditionExpression=Key("user_id").eq(user_id)
+    ).get("Items", [])
+
+    with settings_table.batch_writer() as batch:
+        for item in settings_items:
+            batch.delete_item(Key={"user_id": item["user_id"]})
+            
+    debug("Deleting user results")
+
+    ## Delete from results_table (has sort key "id")
+    results_items = results_table.query(
+        KeyConditionExpression=Key("user_id").eq(user_id)
+    ).get("Items", [])
+
+    with results_table.batch_writer() as batch:
+        for item in results_items:
+            batch.delete_item(Key={"user_id": item["user_id"], "id": item["id"]})
+
+    return RedirectResponse(url="/settings", status_code=303)
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     debug("[GET] /")
