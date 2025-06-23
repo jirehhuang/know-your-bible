@@ -130,6 +130,50 @@
         font-size: 1em;
       }
     }
+
+    a {
+      color: var(--link-color);
+      text-decoration: underline;
+    }
+
+    a:visited {
+      color: var(--visited-link-color);
+    }
+
+    a:hover, a:focus {
+      color: var(--hover-color);
+      text-decoration: underline;
+    }
+
+    .top-bar a,
+    .top-bar a:visited {
+      color: var(--text-color);      /* Matches normal text */
+      text-decoration: none;
+    }
+
+    .top-bar a:hover,
+    .top-bar a:focus {
+      color: var(--hover-color);     /* Subtle hover effect */
+      text-decoration: underline;
+    }
+
+    :root {
+      --bg-color: #ffffff;
+      --text-color: #000000;
+      --top-bar-bg: #f5f5f5;
+      --link-color: #0645ad;           /* typical blue link */
+      --visited-link-color: #0b0080;   /* typical purple visited link */
+      --hover-color: #3366cc;          /* brighter blue on hover */
+    }
+
+    body.dark {
+      --bg-color: #121212;
+      --text-color: #f5f5f5;
+      --top-bar-bg: #1e1e1e;
+      --link-color: #4ea3ff;           /* light blue link */
+      --visited-link-color: #a58fff;   /* soft purple for visited links */
+      --hover-color: #bcdfff;          /* very bright on hover */
+    }
   </style>
 
   {% block styles %}{% endblock %}
