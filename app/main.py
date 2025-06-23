@@ -197,11 +197,11 @@ def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upwe
 
     ## Adjust by due date, if any
     due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
-    secs2due = (now - due).total_seconds()
+    secs2due = (due - now).total_seconds()
     # interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
 
     ## Adjust weight by factor
-    weight_factor = 10 ** (-100 if secs2due >= 0 else 100)  # Only depend on overdue or not
+    weight_factor = 10 ** (-100 if secs2due > 0 else 100 if secs2due < 0 else 0)  # Only depend on overdue or not
     max_exponent = 308
     try:
         weight = max(1, min(10 ** max_exponent, weight * weight_factor))
