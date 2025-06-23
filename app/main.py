@@ -238,12 +238,13 @@ def get_random_reference(settings):
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
 
     selector = settings.get("settings", {}).get("selector", "greedy")
-    if selector == "greedy":
+    if selector == "random":
         book, chapter, verse, weight = weighted_sample(eligible_references)
-    elif selector == "greedy":
+        debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
+    else:  # elif selector == "greedy":
         book, chapter, verse, weight = max(eligible_references, key=lambda x: x[3])
+        debug(f"Reference with highest weight selected: {book} {chapter}:{verse} with weight={weight}")
     
-    debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
     return book, chapter, verse
 
 def get_surrounding_verses(bible, book, chapter, verse):
