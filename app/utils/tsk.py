@@ -44,12 +44,14 @@ def load_tsk_data():
 load_tsk_data()
 
 
-def get_tsk_for_ref(actual_ref: str):
-    """Takes 'John 3:16' and returns TSK entries for that verse."""
+def get_tsk_for_ref(ref: str):
+    """Takes 'John 3:16' or '1 Corinthians 13:4' and returns TSK entries for that verse."""
     try:
-        book, chapter_verse = actual_ref.strip().split()
+        tokens = ref.strip().split()
+        chapter_verse = tokens[-1]
+        book = " ".join(tokens[:-1])
         chapter, verse = map(int, chapter_verse.split(":"))
-    except ValueError:
+    except (ValueError, IndexError):
         return []
 
     # Convert book to book_key
@@ -78,3 +80,29 @@ def get_tsk_for_ref(actual_ref: str):
         })
 
     return results
+
+
+if __name__ == "__main__":
+    test_refs = [
+        "John 3:16",              # Common NT verse
+        "1 Corinthians 13:4",     # Numbered book, NT
+        "2 Timothy 3:16",         # Another numbered book
+        "Song of Solomon 2:1",    # Multi-word OT book
+        "1 Peter 1:3",            # NT, numbered book
+        "Ecclesiastes 3:1",       # OT book with longer name
+        "Psalms 23:1",            # Psalms (note plural form)
+        "Genesis 1:1",            # Beginning of OT
+        "Revelation 21:4",        # End of NT
+        "Habakkuk 2:4"            # Obscure OT prophet
+    ]
+
+    for ref in test_refs:
+        print(f"\nTesting: {ref}")
+        results = get_tsk_for_ref(ref)
+        if not results:
+            print("  ❌ No entries found")
+        else:
+            for entry in results:
+                print(f"  Word: {entry['word']}")
+                for r in entry['references']:
+                    print(f"    → {r}")
