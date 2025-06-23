@@ -607,13 +607,15 @@ def get_review_data(settings):
                     card = Card.from_dict(card_dict) if card_dict else None
                 if card:
                     due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
+                    due_in = (datetime.fromisoformat(due_str) - now).total_seconds()
                     review_data.append({
                         "verse": f"{book} {chapter}:{verse}",
+                        "score": verse_dict["user_data"]["score"],
                         "time": verse_dict["user_data"]["timer"],
                         "distance": verse_dict["user_data"]["distance"],
                         "due": due_str,
-                        "due_in": pretty_sec((datetime.fromisoformat(due_str) - now).total_seconds()),
-                        "log10_weight": log10(get_weight(bible, book, chapter, verse, now)),
+                        "due_in_days": due_in / 60 / 60 / 24,
+                        "due_in_str": pretty_sec(due_in),
                         "retrievability": scheduler.get_card_retrievability(card),
                         "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
                     })

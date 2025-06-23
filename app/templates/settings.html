@@ -60,34 +60,20 @@
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <script>
           const reviewData = {{ review_data | tojson }};
+
+          const rawTicks = [0, 1, 3, 7, 14, 30, 90, 180, 365];
+          const maxDay = Math.max(...reviewData.map(r => Math.abs(r.due_in_days)));
+          const filteredTicks = rawTicks.filter(v => v <= maxDay);
+
+          const tickVals = filteredTicks.flatMap(v => [-v, v]); // symmetrical ticks
+          const tickLabels = tickVals.map(v => v.toString());
+          const transformedTicks = tickVals.map(v => Math.asinh(v));
           
-          const log10Weights = reviewData.map(r => r.log10_weight);
           const retrievabilities = reviewData.map(r => r.retrievability);
-          const sizes = log10Weights.map(w => Math.min(w * 10, 100));
 
           const minRet = Math.min(...retrievabilities);
           const maxRet = Math.max(...retrievabilities);
           const midRet = (minRet + maxRet) / 2;
-
-          const formattedDueDates = reviewData.map(r => {
-            try {
-              const date = new Date(r.due);
-              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
-              const localDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
-
-              const pad = n => n.toString().padStart(2, '0');
-              const yyyy = localDate.getFullYear();
-              const mm = pad(localDate.getMonth() + 1);
-              const dd = pad(localDate.getDate());
-              const hh = pad(localDate.getHours());
-              const min = pad(localDate.getMinutes());
-              const ss = pad(localDate.getSeconds());
-
-              return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
-            } catch {
-              return 'Invalid date';
-            }
-          });
 
           let markerOptions;
 
@@ -108,7 +94,7 @@
             const fixedColor = getColorFromRetrievability(minRet);
             markerOptions = {
               color: fixedColor,
-              size: sizes,
+              size: 5,
               sizemode: 'diameter',
               sizemin: 5,
               opacity: 0.8
@@ -124,27 +110,26 @@
               cmin: minRet,
               cmax: maxRet,
               colorbar: { title: 'Retrievability' },
-              size: sizes,
+              size: 10,
               sizemode: 'diameter',
-              sizemin: 5,
               opacity: 0.8
             };
           }
 
           const trace = {
-            x: reviewData.map(r => r.time),
-            y: reviewData.map(r => r.distance),
+            x: reviewData.map(r => Math.asinh(r.due_in_days)),
+            y: reviewData.map(r => r.score),
             text: reviewData.map(r => r.verse),
             mode: 'markers',
             type: 'scatter',
             marker: markerOptions,
-            customdata: reviewData.map((r, i) => [log10Weights[i], formattedDueDates[i], r.due_in, r.url]),
+            customdata: reviewData.map((r, i) => [r.url, r.due_in_str, r.distance, r.time]),
             hovertemplate:
               "<b>%{text}</b><br>" +
-              "Time: %{x}s<br>" +
-              "Distance: %{y}<br>" +
-              // "Due: %{customdata[1]}<br>" +
-              "Due: %{customdata[2]}<br>" +
+              "Score: %{y}<br>" +
+              "Distance: %{customdata[2]}<br>" +
+              "Time: %{customdata[3]}<br>" +
+              "Due In: %{customdata[1]}<br>" +
               (minRet === maxRet
                 ? `Retrievability: ${minRet.toFixed(2)}<br>`
                 : "Retrievability: %{marker.color:.2f}<br>") +
@@ -153,12 +138,43 @@
 
           Plotly.newPlot('review-scatter', [trace], {
             margin: { t: 10 },
-            xaxis: { title: 'Seconds' },
-            yaxis: { title: 'Distance' },
+            xaxis: {
+              title: 'Days Until Due',
+              tickvals: transformedTicks,
+              ticktext: tickLabels,
+              ticklen: 8,
+              tickwidth: 1,
+              tickcolor: 'white',
+              automargin: true,
+            },
+            yaxis: {
+              title: 'Score',
+              ticklen: 8,
+              tickwidth: 1,
+              tickcolor: 'white',
+              automargin: true,
+            },
+            shapes: [
+              {
+                type: 'rect',
+                xref: 'paper',
+                yref: 'paper',
+                x0: 0,
+                y0: 0,
+                x1: 1,
+                y1: 1,
+                line: {
+                  color: 'black',
+                  width: 2
+                },
+                layer: 'above'
+              }
+            ],
             responsive: true,
           });
+
           document.getElementById('review-scatter').on('plotly_click', function(data) {
-            const url = data.points[0].customdata[3];
+            const url = data.points[0].customdata[0];
             if (url) {
               window.open(url, '_blank');
             }
