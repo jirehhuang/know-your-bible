@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from uuid6 import uuid6
 from decimal import Decimal
 from math import floor, log10
@@ -488,12 +488,23 @@ def get_user_stats(settings):
     ## Total points
     total_points = sum(item.get("score", 0) for item in user_data)
 
+    ## Total points in the last 30 days
+    thirty_days_ago = now - timedelta(days=30)
+    points_30days = sum(
+        item.get("score", 0)
+        for item in user_data
+        if "timestamp" in item
+        and isinstance(item["timestamp"], str)
+        and datetime.fromisoformat(item["timestamp"]).replace(tzinfo=timezone.utc) >= thirty_days_ago
+    )
+
     ## Return
     user_stats = {
         "date_time": now,
         "verses_reviewed": verses_reviewed,
         "total_score": total_score,
         "total_points": total_points,
+        "points_30days": points_30days,
     }
 
     return user_stats
