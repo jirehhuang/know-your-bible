@@ -40,9 +40,10 @@ def xml_to_json(xml_path: str) -> dict:
         for chapter_index, chapter in enumerate(book.findall("c"), start=1):
             chapter_dict = {}
 
-            for verse_index, verse in enumerate(chapter.findall("v"), start=1):
+            for verse in chapter.findall("v"):
+                verse_num = int(verse.attrib["n"])
                 text = (verse.text or "").strip()
-                chapter_dict[verse_index] = {
+                chapter_dict[verse_num] = {
                     "text": text,
                 }
 
