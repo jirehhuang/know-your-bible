@@ -68,8 +68,8 @@
         <td style="text-align: left; max-width: 20em; width: auto;">{{ formatted_timer }}</td>
       </tr>
       <tr>
-        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Ease:</strong></td>
-        <td style="text-align: left; max-width: 20em; width: auto;">{{ rating }}</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Due In:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ due_in }} ({{ rating }})</td>
       </tr>
       <tr>
         <td style="text-align: right; max-width: 20em; width: auto;"><strong>Your Answer:</strong></td>
@@ -89,7 +89,7 @@
 
     {% set label_col_width = '15em' %}
     {% set value_col_width = '30em' %}
-    <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em;">
+    <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em; margin-bottom: 2em">
       <tr>
         <td style="text-align: right; vertical-align: top; max-width: {{ label_col_width }}; width: auto;">{{ actual_ref }}</td>
         <td style="text-align: left; vertical-align: top; max-width: {{ value_col_width}}; width: auto;">{{ actual_text }}</td>

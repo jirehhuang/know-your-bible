@@ -817,6 +817,8 @@ def submit(
     card, review_log = scheduler.review_card(card, rating)
 
     ## Write to DynamoDB if logged in to email
+    interval_secs = (card.due - card.last_review).total_seconds()
+
     result = {
         "user_id": user_id,
         "id": str(uuid6()),
@@ -829,7 +831,7 @@ def submit(
         "rating": rating,
         "card_dict": card.to_dict(),
         "due_str": card.due.isoformat(),
-        "interval_secs": (card.due - card.last_review).total_seconds(),
+        "interval_secs": interval_secs,
     }
     if True or "@" in user_id:  # TODO:
         results_table.put_item(Item=convert_types(result, "Decimal"))
@@ -854,6 +856,7 @@ def submit(
         "score": score,
         "timer": round(float(timer), 1),
         "rating": RATING_MAP.get(rating, "Unknown"),
+        "due_in": pretty_sec(interval_secs),
         "tsk_data": tsk_data,
         "harmony_data": harmony_data,
     }
