@@ -30,6 +30,7 @@ TSK_LOOKUP = defaultdict(list)
 
 
 def load_tsk_data():
+    print("[DEUBG] Loading TSK data from file")
     with open(TSK_PATH, "r", encoding="latin-1") as f:
         for line in f:
             parts = line.strip().split("\t")
