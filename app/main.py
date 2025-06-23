@@ -273,8 +273,10 @@ def get_random_reference(settings):
         book, chapter, verse, weight = weighted_sample(eligible_references)
         debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
     else:  # elif selector == "greedy":
-        book, chapter, verse, weight = max(eligible_references, key=lambda x: x[3])
-        debug(f"Reference with highest weight selected: {book} {chapter}:{verse} with weight={weight}")
+        max_weight = max(w for _, _, _, w in eligible_references)
+        top_refs = [ref for ref in eligible_references if ref[3] == max_weight]
+        book, chapter, verse, weight = random.choice(top_refs)
+        debug(f"Randomly selected from top-weighted references: {book} {chapter}:{verse} with weight={weight}")
     
     return book, chapter, verse
 
