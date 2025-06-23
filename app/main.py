@@ -237,8 +237,8 @@ def get_random_reference(settings):
     ## Refresh weights before sampling
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
 
-    selector = settings.get("settings", {}).get("selector", "random")
-    if selector == "random":
+    selector = settings.get("settings", {}).get("selector", "greedy")
+    if selector == "greedy":
         book, chapter, verse, weight = weighted_sample(eligible_references)
     elif selector == "greedy":
         book, chapter, verse, weight = max(eligible_references, key=lambda x: x[3])
@@ -610,7 +610,7 @@ def get_settings(request: Request):
     selected_chapters = settings.get("settings", {}).get("chapters", {})
     selected_testaments = settings.get("settings", {}).get("testaments", [])
     selected_translation = settings.get("settings", {}).get("translation", "esv")
-    selected_selector = settings.get("settings", {}).get("selector", "random")
+    selected_selector = settings.get("settings", {}).get("selector", "greedy")
     selected_priority = settings.get("settings", {}).get("priority", "weighted")
 
     user_stats = get_user_stats(settings)
@@ -640,7 +640,7 @@ def save_settings(
     selected_chapters: list[str] = Form(default=[]),
     selected_testaments: list[str] = Form(default=[]),
     translation: str = Form(default="esv"),
-    selector: str = Form(default="random"),
+    selector: str = Form(default="greedy"),
     priority: str = Form(default="weighted"),
 ):
     user_id, settings = get_user_id_settings(request)
