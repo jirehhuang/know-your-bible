@@ -29,7 +29,7 @@
       <!-- Show stats table and scatter plot -->
        <h3 style="margin-bottom: 0.5em;">{{ user_id }}</h3>
 
-      <section style="margin-bottom: 2em;">
+      <section style="margin-bottom: 1em;">
         <table style="border-collapse: separate; border-spacing: 0em 0.5em; margin-top: 1em; margin-bottom: 1em; margin-left: 1em;">
           <tr>
             <td style="padding-right: 1.5em;"><strong>Timestamp:</strong></td>
@@ -37,6 +37,9 @@
           </tr>
           <tr>
             <td style="padding-right: 1.5em;"><strong>Verses Reviewed:</strong></td><td>{{ stats.verses_reviewed | int }}</td>
+          </tr>
+          <tr>
+            <td style="padding-right: 1.5em;"><strong>Total Stars:</strong></td><td>{{ stats.total_stars | int }}</td>
           </tr>
           <tr>
             <td style="padding-right: 1.5em;"><strong>Total Score:</strong></td><td>{{ stats.total_score | int }}</td>
@@ -50,6 +53,10 @@
         </table>
       </section>
 
+      <div style="margin-left: 1em; margin-bottom: 2.5em;">
+        <button type="button" id="reset-button" style="font-size: 1em;">Delete All Data</button>
+      </div>
+
       {% if review_data %}
         <h3 style="margin-bottom: 0.5em;">Review Progress</h3>
         <div id="review-scatter" style="height: 400px;"></div>
@@ -57,34 +64,20 @@
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <script>
           const reviewData = {{ review_data | tojson }};
+
+          const rawTicks = [0, 1, 3, 7, 14, 30, 90, 180, 365];
+          const maxDay = Math.max(...reviewData.map(r => Math.abs(r.due_in_days)));
+          const filteredTicks = rawTicks.filter(v => v <= maxDay);
+
+          const tickVals = filteredTicks.flatMap(v => [-v, v]); // symmetrical ticks
+          const tickLabels = tickVals.map(v => v.toString());
+          const transformedTicks = tickVals.map(v => Math.asinh(v));
           
-          const log10Weights = reviewData.map(r => r.log10_weight);
           const retrievabilities = reviewData.map(r => r.retrievability);
-          const sizes = log10Weights.map(w => Math.min(w * 10, 100));
 
           const minRet = Math.min(...retrievabilities);
           const maxRet = Math.max(...retrievabilities);
           const midRet = (minRet + maxRet) / 2;
-
-          const formattedDueDates = reviewData.map(r => {
-            try {
-              const date = new Date(r.due);
-              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
-              const localDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
-
-              const pad = n => n.toString().padStart(2, '0');
-              const yyyy = localDate.getFullYear();
-              const mm = pad(localDate.getMonth() + 1);
-              const dd = pad(localDate.getDate());
-              const hh = pad(localDate.getHours());
-              const min = pad(localDate.getMinutes());
-              const ss = pad(localDate.getSeconds());
-
-              return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
-            } catch {
-              return 'Invalid date';
-            }
-          });
 
           let markerOptions;
 
@@ -105,7 +98,7 @@
             const fixedColor = getColorFromRetrievability(minRet);
             markerOptions = {
               color: fixedColor,
-              size: sizes,
+              size: 5,
               sizemode: 'diameter',
               sizemin: 5,
               opacity: 0.8
@@ -121,27 +114,26 @@
               cmin: minRet,
               cmax: maxRet,
               colorbar: { title: 'Retrievability' },
-              size: sizes,
+              size: 10,
               sizemode: 'diameter',
-              sizemin: 5,
               opacity: 0.8
             };
           }
 
           const trace = {
-            x: reviewData.map(r => r.time),
-            y: reviewData.map(r => r.distance),
+            x: reviewData.map(r => Math.asinh(r.due_in_days)),
+            y: reviewData.map(r => r.score),
             text: reviewData.map(r => r.verse),
             mode: 'markers',
             type: 'scatter',
             marker: markerOptions,
-            customdata: reviewData.map((r, i) => [log10Weights[i], formattedDueDates[i], r.due_in, r.url]),
+            customdata: reviewData.map((r, i) => [r.url, r.due_in_str, r.distance, r.time]),
             hovertemplate:
               "<b>%{text}</b><br>" +
-              "Time: %{x}s<br>" +
-              "Distance: %{y}<br>" +
-              // "Due: %{customdata[1]}<br>" +
-              "Due: %{customdata[2]}<br>" +
+              "Score: %{y}<br>" +
+              "Distance: %{customdata[2]}<br>" +
+              "Time: %{customdata[3]}<br>" +
+              "Due In: %{customdata[1]}<br>" +
               (minRet === maxRet
                 ? `Retrievability: ${minRet.toFixed(2)}<br>`
                 : "Retrievability: %{marker.color:.2f}<br>") +
@@ -150,12 +142,43 @@
 
           Plotly.newPlot('review-scatter', [trace], {
             margin: { t: 10 },
-            xaxis: { title: 'Seconds' },
-            yaxis: { title: 'Distance' },
+            xaxis: {
+              title: 'Days Until Due',
+              tickvals: transformedTicks,
+              ticktext: tickLabels,
+              ticklen: 8,
+              tickwidth: 1,
+              tickcolor: 'white',
+              automargin: true,
+            },
+            yaxis: {
+              title: 'Score',
+              ticklen: 8,
+              tickwidth: 1,
+              tickcolor: 'white',
+              automargin: true,
+            },
+            shapes: [
+              {
+                type: 'rect',
+                xref: 'paper',
+                yref: 'paper',
+                x0: 0,
+                y0: 0,
+                x1: 1,
+                y1: 1,
+                line: {
+                  color: 'black',
+                  width: 2
+                },
+                layer: 'above'
+              }
+            ],
             responsive: true,
           });
+
           document.getElementById('review-scatter').on('plotly_click', function(data) {
-            const url = data.points[0].customdata[3];
+            const url = data.points[0].customdata[0];
             if (url) {
               window.open(url, '_blank');
             }
@@ -267,6 +290,24 @@
     <button type="submit" style="font-size: 1em;">Save</button>
   </form>
 
+  <div id="reset-modal" style="display: none; position: fixed; top: 0; left: 0; 
+      width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.6); z-index: 1000;">
+    <div style="background-color: var(--bg-color); color: var(--text-color); padding: 2em; max-width: 500px; margin: 10vh auto; border-radius: 10px; border: 1px solid var(--text-color);">
+      <h3 style="margin-top: 0;">Confirm Data Deletion</h3>
+      <p>This will permanently delete <strong>all</strong> of your review data and settings. This action cannot be undone.</p>
+      <p>To confirm, type: <code>delete data for {{ user_id }}</code></p>
+      <input type="text" id="confirm-input" style="width: 100%; padding: 0.5em; margin-bottom: 1em;" placeholder="Type exact phrase here" />
+      <div style="display: flex; justify-content: flex-end; gap: 1em;">
+        <button id="cancel-reset" type="button">Cancel</button>
+        <form method="post" action="/delete_user_data" onsubmit="return checkDeleteConfirmation();">
+          <input type="hidden" name="user_id" value="{{ user_id }}">
+          <button id="confirm-reset" type="submit" style="color: white; background: red; padding: 0.5em 1em;">Confirm</button>
+        </form>
+      </div>
+      <p id="warning-message" style="color: red; display: none; margin-top: 1em;">❌ Input does not match required confirmation text.</p>
+    </div>
+  </div>
+
   <script>
   document.addEventListener("DOMContentLoaded", function () {
     const elem = document.getElementById("last-reviewed-time");
@@ -339,5 +380,32 @@
 
     // Call once on page load
     updateDescription();
+  </script>
+
+  <script>
+    const resetBtn = document.getElementById("reset-button");
+    const modal = document.getElementById("reset-modal");
+    const cancelReset = document.getElementById("cancel-reset");
+    const confirmInput = document.getElementById("confirm-input");
+    const warning = document.getElementById("warning-message");
+
+    resetBtn?.addEventListener("click", () => {
+      modal.style.display = "block";
+      confirmInput.value = "";
+      warning.style.display = "none";
+    });
+
+    cancelReset?.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+
+    function checkDeleteConfirmation() {
+      const expected = "delete data for {{ user_id }}";
+      if (confirmInput.value.trim() !== expected) {
+        warning.style.display = "block";
+        return false;
+      }
+      return true;
+    }
   </script>
 {% endblock %}

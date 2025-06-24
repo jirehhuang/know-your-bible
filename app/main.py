@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fsrs import Scheduler, Card, Rating, ReviewLog
 from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
-from app.utils.tsk import get_tsk_for_ref
+from app.utils.tsk import parse_standard_ref, get_tsk_for_ref
 from app.utils.harmony import get_harmony_entries_for_verse
 
 DEBUG_MODE = True  # Global debug mode flag
@@ -197,17 +197,20 @@ def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upwe
 
     ## Adjust by due date, if any
     due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
-    interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
-    secs2due = (now - due).total_seconds()
+    secs2due = (due - now).total_seconds()
+    # interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
 
     ## Adjust weight by factor
+    weight_factor = 10 ** (-100 if secs2due > 0 else 100 if secs2due < 0 else 0)  # Only depend on overdue or not
     max_exponent = 308
     try:
-        ## 10x weight for every 1% overdue
-        weight_factor = 10 ** min(max_exponent, secs2due / interval_secs)
-        weight = min(10 ** max_exponent, weight * weight_factor)
+        weight = max(1, min(10 ** max_exponent, weight * weight_factor))
     except (OverflowError, ZeroDivisionError):
         weight = 10 ** max_exponent
+
+    ## Optional debugging
+    if False and book=="Titus" and str(chapter)=="3" and str(verse)=="10":
+        debug(f"{book} {chapter}:{verse} - interval_secs={pretty_sec(interval_secs)}, secs2due={pretty_sec(secs2due)}, weight={weight}")
 
     return weight
 
@@ -232,18 +235,45 @@ def weighted_sample(choices):
     ## Fallback to last item in case of rounding issues
     return choices[-1]
 
+def get_top_n(eligible_references, n):
+    """
+    Prints and returns the top n references based on weight.
+
+    Parameters:
+        eligible_references (list): List of tuples (book, chapter, verse, weight).
+        n (int): Number of top references to return.
+
+    Returns:
+        list: Top n references sorted by descending weight.
+    """
+    top_refs = sorted(eligible_references, key=lambda x: x[3], reverse=True)[:n]
+
+    print("\nTop Verses by Weight:")
+    print("-" * 35)
+    for book, chapter, verse, weight in top_refs:
+        ref_str = f"{book} {chapter}:{verse}"
+        print(f"{ref_str:<20}  Weight: {weight:>7.4f}")
+    print("-" * 35)
+
+    return top_refs
+
 ## Get random verse reference using weights
 def get_random_reference(settings):
     ## Refresh weights before sampling
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
+
+    if False:  # Optional debugging
+        get_top_n(eligible_references, 20)
 
     selector = settings.get("settings", {}).get("selector", "random")
     if selector == "random":
         book, chapter, verse, weight = weighted_sample(eligible_references)
         debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
     else:  # elif selector == "greedy":
-        book, chapter, verse, weight = max(eligible_references, key=lambda x: x[3])
-        debug(f"Reference with highest weight selected: {book} {chapter}:{verse} with weight={weight}")
+        max_weight = max(w for _, _, _, w in eligible_references)
+        top_refs = [ref for ref in eligible_references if ref[3] == max_weight]
+        book, chapter, verse, weight = random.choice(top_refs)
+        debug(f"Randomly selected from top-weighted references: {book} {chapter}:{verse} with weight={weight}")
     
     return book, chapter, verse
 
@@ -406,6 +436,13 @@ def parse_natural_reference(bible, submitted_ref: str):
 def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
     bible_books = list(bible.keys())
 
+    ## Calculate stars
+    stars = int(
+        (actual_book==submitted_book) + 
+        (actual_book==submitted_book and actual_ch==submitted_ch) + 
+        (actual_book==submitted_book and actual_ch==submitted_ch and actual_v==submitted_v)
+    )
+
     def flat_index(book, chapter, verse):
         index = 0
         for b in bible_books:
@@ -441,8 +478,8 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
     else:
         rating = 1
     
-    debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, rating: {rating})")
-    return distance, score, rating
+    debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, stars: {stars}, rating: {rating})")
+    return stars, distance, score, rating
 
 def get_user_id(request: Request) -> str:
     user_id = request.cookies.get("user_id")
@@ -469,23 +506,40 @@ def get_user_stats(settings):
         user_stats = {
             "date_time": now,
             "verses_reviewed": 0,
-            "total_score": int(0),
+            "total_stars": 0,
+            "total_score": 0,
             "total_points": 0,
+            "points_30days": 0,
         }
         return user_stats
     
     ## Reviewed and total score
     verses_reviewed = 0
+    total_stars = 0
     total_score = 0
     bible = settings["bible"]
     for book in bible:
         for chapter in bible[book]:
             for verse in bible[book][chapter]:
-                verse_score = bible[book][chapter][verse].get("user_data", {}).get("score", -1)
+                verse_data = bible[book][chapter][verse].get("user_data", {})
+                verse_score = verse_data.get("score", -1)
                 if verse_score >= 0:
                     verses_reviewed += 1
                     total_score += verse_score
-    
+
+                    ## Compute stars if necessary
+                    verse_stars = verse_data.get("stars", None)
+                    if not verse_stars:
+                        submitted_book, submitted_ch, submitted_v = parse_standard_ref(verse_data["submitted"])
+                        verse_stars = int(
+                            (book==submitted_book) + 
+                            (book==submitted_book and chapter==str(submitted_ch)) +
+                            (book==submitted_book and chapter==str(submitted_ch) and verse==str(submitted_v))
+                        )
+                        if False:  # Optional debugging
+                            debug(f"actual={book} {chapter}:{verse}, submitted={verse_data["submitted"]}, parsed={submitted_book} {submitted_ch}:{submitted_v}, stars={verse_stars}")
+                    total_stars += verse_stars
+
     ## Total points
     total_points = sum(item.get("score", 0) for item in user_data)
 
@@ -503,6 +557,7 @@ def get_user_stats(settings):
     user_stats = {
         "date_time": now,
         "verses_reviewed": verses_reviewed,
+        "total_stars": total_stars,
         "total_score": total_score,
         "total_points": total_points,
         "points_30days": points_30days,
@@ -552,13 +607,15 @@ def get_review_data(settings):
                     card = Card.from_dict(card_dict) if card_dict else None
                 if card:
                     due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
+                    due_in = (datetime.fromisoformat(due_str) - now).total_seconds()
                     review_data.append({
                         "verse": f"{book} {chapter}:{verse}",
+                        "score": verse_dict["user_data"]["score"],
                         "time": verse_dict["user_data"]["timer"],
                         "distance": verse_dict["user_data"]["distance"],
                         "due": due_str,
-                        "due_in": pretty_sec((datetime.fromisoformat(due_str) - now).total_seconds()),
-                        "log10_weight": log10(get_weight(bible, book, chapter, verse, now)),
+                        "due_in_days": due_in / 60 / 60 / 24,
+                        "due_in_str": pretty_sec(due_in),
                         "retrievability": scheduler.get_card_retrievability(card),
                         "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
                     })
@@ -696,6 +753,32 @@ def save_settings(
     response.set_cookie("user_id", user_id)
     return response
 
+@app.post("/delete_user_data")
+async def delete_user_data(request: Request, user_id: str = Form(...)):
+    debug("Deleting user settings")
+    
+    ## Delete from settings_table (no sort key)
+    settings_items = settings_table.query(
+        KeyConditionExpression=Key("user_id").eq(user_id)
+    ).get("Items", [])
+
+    with settings_table.batch_writer() as batch:
+        for item in settings_items:
+            batch.delete_item(Key={"user_id": item["user_id"]})
+            
+    debug("Deleting user results")
+
+    ## Delete from results_table (has sort key "id")
+    results_items = results_table.query(
+        KeyConditionExpression=Key("user_id").eq(user_id)
+    ).get("Items", [])
+
+    with results_table.batch_writer() as batch:
+        for item in results_items:
+            batch.delete_item(Key={"user_id": item["user_id"], "id": item["id"]})
+
+    return RedirectResponse(url="/settings", status_code=303)
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     debug("[GET] /")
@@ -799,7 +882,7 @@ def submit(
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
-    distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
+    stars, distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
 
     ## Retrieve scheduler and card
     scheduler = settings["scheduler"]
@@ -812,24 +895,27 @@ def submit(
         card = Card.from_dict(card_dict) if card_dict else Card()
     
     ## Review
-    if card.step:
+    if card.step is not None:
         card.step = int(card.step)  # Ensure type
     card, review_log = scheduler.review_card(card, rating)
 
     ## Write to DynamoDB if logged in to email
+    interval_secs = (card.due - card.last_review).total_seconds()
+
     result = {
         "user_id": user_id,
         "id": str(uuid6()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "reference": actual_ref,
         "submitted": normalized_submitted_ref,
+        "stars": stars,
         "score": score,
         "distance": distance,
         "timer": round(float(timer), 3),
         "rating": rating,
         "card_dict": card.to_dict(),
         "due_str": card.due.isoformat(),
-        "interval_secs": (card.due - card.last_review).total_seconds(),
+        "interval_secs": interval_secs,
     }
     if True or "@" in user_id:  # TODO:
         results_table.put_item(Item=convert_types(result, "Decimal"))
@@ -851,9 +937,11 @@ def submit(
         "actual_ref": actual_ref,
         "actual_ch": f"{book} {actual_ch}:1-{ch_verses}",
         "actual_text": bible[book][str(actual_ch)][str(actual_v)]["text"],
+        "stars": stars,
         "score": score,
         "timer": round(float(timer), 1),
         "rating": RATING_MAP.get(rating, "Unknown"),
+        "due_in": pretty_sec(interval_secs),
         "tsk_data": tsk_data,
         "harmony_data": harmony_data,
     }

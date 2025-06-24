@@ -23,24 +23,6 @@
 {% block content %}
   <div class="result-container">
 
-    {% set submitted_book = submitted_ref.split()[0].lower() %}
-    {% set submitted_chapter = submitted_ref.split()[1].split(":")[0] %}
-    {% set submitted_verse = submitted_ref.split()[1].split(":")[1] %}
-
-    {% set actual_book = actual_ref.split()[0].lower() %}
-    {% set actual_chapter = actual_ref.split()[1].split(":")[0] %}
-    {% set actual_verse = actual_ref.split()[1].split(":")[1] %}
-
-    {% if submitted_book == actual_book and submitted_chapter == actual_chapter and submitted_verse == actual_verse %}
-      {% set stars = 3 %}
-    {% elif submitted_book == actual_book and submitted_chapter == actual_chapter %}
-      {% set stars = 2 %}
-    {% elif submitted_book == actual_book %}
-      {% set stars = 1 %}
-    {% else %}
-      {% set stars = 0 %}
-    {% endif %}
-
     {% set minutes = (timer // 60) | int %}
     {% set seconds = (timer % 60) | int %}
     {% set formatted_timer = "%02d:%02d"|format(minutes, seconds) %}
@@ -68,8 +50,8 @@
         <td style="text-align: left; max-width: 20em; width: auto;">{{ formatted_timer }}</td>
       </tr>
       <tr>
-        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Ease:</strong></td>
-        <td style="text-align: left; max-width: 20em; width: auto;">{{ rating }}</td>
+        <td style="text-align: right; max-width: 20em; width: auto;"><strong>Due In:</strong></td>
+        <td style="text-align: left; max-width: 20em; width: auto;">{{ due_in }} ({{ rating }})</td>
       </tr>
       <tr>
         <td style="text-align: right; max-width: 20em; width: auto;"><strong>Your Answer:</strong></td>
@@ -89,7 +71,7 @@
 
     {% set label_col_width = '15em' %}
     {% set value_col_width = '30em' %}
-    <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em;">
+    <table style="margin: 0 auto; border-collapse: separate; border-spacing: 1em 1em; margin-bottom: 2em">
       <tr>
         <td style="text-align: right; vertical-align: top; max-width: {{ label_col_width }}; width: auto;">{{ actual_ref }}</td>
         <td style="text-align: left; vertical-align: top; max-width: {{ value_col_width}}; width: auto;">{{ actual_text }}</td>
