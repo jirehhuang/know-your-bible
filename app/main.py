@@ -536,8 +536,8 @@ def get_user_stats(settings):
                             (book==submitted_book and chapter==str(submitted_ch)) +
                             (book==submitted_book and chapter==str(submitted_ch) and verse==str(submitted_v))
                         )
-                        if False:  # Optional debugging
-                            debug(f"actual={book} {chapter}:{verse}, submitted={verse_data["submitted"]}, parsed={submitted_book} {submitted_ch}:{submitted_v}, stars={verse_stars}")
+                        # if False:  # Optional debugging
+                        #     debug(f"actual={book} {chapter}:{verse}, submitted={verse_data["submitted"]}, parsed={submitted_book} {submitted_ch}:{submitted_v}, stars={verse_stars}")
                     total_stars += verse_stars
 
     ## Total points
