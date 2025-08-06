@@ -219,6 +219,28 @@
 
     <h3>Review Selection</h3>
 
+    <label>
+      <input type="checkbox" name="verse_selection" id="use_verse-selection"
+        {% if verse_selection %}checked{% endif %}>
+      <strong>Verse Selection</strong>
+    </label>
+
+    <div id="verse-selection-container" style="margin-top: 1em; display: {% if verse_selection %}block{% else %}none{% endif %};">
+      <!-- <label for="verse-selection-text" style="font-weight: bold;">Verse List:</label> -->
+      <textarea name="selected_verses" id="verse-selection-text" rows="8" style="width: 100%; resize: vertical;">{{ selected_verses or '' }}</textarea>
+    </div>
+
+    <script>
+      const verseSelectionCheckbox = document.getElementById("use_verse-selection");
+      const verseSelectionContainer = document.getElementById("verse-selection-container");
+
+      verseSelectionCheckbox?.addEventListener("change", () => {
+        verseSelectionContainer.style.display = verseSelectionCheckbox.checked ? "block" : "none";
+      });
+    </script>
+
+    <br><br>
+
     <ul>
       <li>Select testaments, books, and/or chapters to review. If none are selected, defaults to the whole Bible.</li>
       <li>If a testament is selected, all of its books are included. Similarly, if a book is selected, all of its chapters are included. Otherwise, only selected chapters are included.</li>

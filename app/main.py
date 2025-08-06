@@ -3,6 +3,7 @@ import re
 import logging
 import boto3
 import random
+import json
 import app.utils.cache as cache
 from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI, Request, Form
@@ -21,6 +22,7 @@ from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
 from app.utils.tsk import parse_standard_ref, get_tsk_for_ref
 from app.utils.harmony import get_harmony_entries_for_verse
+from data.references.get_resource_references import extract_references
 
 DEBUG_MODE = True  # Global debug mode flag
 
@@ -114,6 +116,7 @@ def load_user_settings_from_db(user_id: str):
     testaments = set(settings.get("testaments", []))
     books = set(settings.get("books", []))
     chapters = settings.get("chapters", {})
+    selected_verses = settings.get("selected_verses", {})
     translation = settings.get("translation", "esv")  # Default to ESV
     priority = settings.get("priority", "weighted")
 
@@ -138,7 +141,7 @@ def load_user_settings_from_db(user_id: str):
 
     ## Load derived data
     bible = get_bible_translation(translation=translation, bool_counts=bool(priority=="weighted"), user_data=user_data)
-    eligible_references = get_eligible_references(bible, testaments, books, chapters)
+    eligible_references = get_eligible_references(bible, testaments, books, chapters, selected_verses)
 
     ## Cache full user config
     full_settings = {
@@ -153,10 +156,17 @@ def load_user_settings_from_db(user_id: str):
 
     return full_settings
 
-def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters):
+def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters, selected_verses):
     ## Add entire testament(s)
     selected_books |= set(OT_BOOKS if "old" in selected_testaments else [])
     selected_books |= set(NT_BOOKS if "new" in selected_testaments else [])
+    selected_verses = set(
+        [
+            verse 
+            for item in extract_references(selected_verses) 
+            for verse in item["verses"]
+        ]
+    ) if selected_verses else ""
     
     eligible_references = []
 
@@ -165,13 +175,15 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
         if book in selected_books:
             for chapter in chapters:
                 for verse in chapters[chapter]:
-                    eligible_references.append((book, chapter, verse, 1))
+                    if not selected_verses or f"{book} {chapter}:{verse}" in selected_verses:
+                        eligible_references.append((book, chapter, verse, 1))
         elif book in selected_chapters:
             for ch in selected_chapters[book]:
                 ch_str = str(ch)
                 if ch_str in chapters:
                     for verse in chapters[ch_str]:
-                        eligible_references.append((book, chapter, verse, 1))
+                        if not selected_verses or f"{book} {ch_str}:{verse}" in selected_verses:
+                            eligible_references.append((book, chapter, verse, 1))
                 else:
                     debug(f"⚠️ Chapter {ch_str} not found in {book}")
 
@@ -180,7 +192,8 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
         for book in bible:
             for chapter in bible[book]:
                 for verse in bible[book][chapter]:
-                    eligible_references.append((book, chapter, verse, 1))
+                    if not selected_verses or f"{book} {chapter}:{verse}" in selected_verses:
+                        eligible_references.append((book, chapter, verse, 1))
 
     # debug(f"eligible_references: {json.dumps(eligible_references, indent=2)}")
     
@@ -664,9 +677,11 @@ def get_settings(request: Request):
 
     debug(f"[GET] /settings for user_id={user_id}")
 
+    selected_testaments = settings.get("settings", {}).get("testaments", [])
     selected_books = settings.get("settings", {}).get("books", [])
     selected_chapters = settings.get("settings", {}).get("chapters", {})
-    selected_testaments = settings.get("settings", {}).get("testaments", [])
+    selected_verses = settings.get("settings", {}).get("selected_verses", "")
+    verse_selection = settings.get("settings", {}).get("verse_selection", "")
     selected_translation = settings.get("settings", {}).get("translation", "esv")
     selected_selector = settings.get("settings", {}).get("selector", "random")
     selected_priority = settings.get("settings", {}).get("priority", "weighted")
@@ -684,9 +699,11 @@ def get_settings(request: Request):
         "selected_translation": selected_translation,
         "selector": selected_selector,
         "priority": selected_priority,
+        "selected_testaments": selected_testaments,
         "selected_books": selected_books,
         "selected_chapters": selected_chapters,
-        "selected_testaments": selected_testaments,
+        "selected_verses": selected_verses,
+        "verse_selection": verse_selection,
         "stats": user_stats,
         "review_data": review_data,
     })
@@ -694,9 +711,11 @@ def get_settings(request: Request):
 @app.post("/settings", response_class=HTMLResponse)
 def save_settings(
     request: Request,
+    selected_testaments: list[str] = Form(default=[]),
     selected_books: list[str] = Form(default=[]),
     selected_chapters: list[str] = Form(default=[]),
-    selected_testaments: list[str] = Form(default=[]),
+    selected_verses: str = Form(default=""),
+    verse_selection: str = Form(default=""),
     translation: str = Form(default="esv"),
     selector: str = Form(default="random"),
     priority: str = Form(default="weighted"),
@@ -709,6 +728,8 @@ def save_settings(
     debug(f"Selected testaments: {selected_testaments}")
     debug(f"Selected books: {selected_books}")
     debug(f"Selected chapters (raw): {selected_chapters}")
+    debug(f"Selected verses: {selected_verses}")
+    debug(f"Verse selection: {verse_selection}")
     debug(f"Selected translation: {translation}")
     debug(f"Selected selector: {selector}")
     debug(f"Selected priority: {priority}")
@@ -725,6 +746,8 @@ def save_settings(
         "testaments": selected_testaments,
         "books": selected_books,
         "chapters": chapter_map,
+        "selected_verses": selected_verses.strip(),
+        "verse_selection": verse_selection,
         "translation": translation,
         "selector": selector,
         "priority": priority,
@@ -743,7 +766,13 @@ def save_settings(
     cache.set_cached_user_settings(user_id, {
         "settings": new_settings,
         "bible": bible,
-        "eligible_references": get_eligible_references(bible, selected_testaments, set(selected_books), chapter_map),
+        "eligible_references": get_eligible_references(
+            bible,
+            selected_testaments,
+            set(selected_books),
+            chapter_map,
+            selected_verses,
+        ),
         "user_data": user_data,
         "scheduler": scheduler,
     })
