@@ -17,6 +17,7 @@ from math import floor, log10
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.datastructures import URL
 from fsrs import Scheduler, Card, Rating, ReviewLog
 from word2number import w2n
 from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
@@ -224,7 +225,7 @@ def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upwe
     weight_factor = 10 ** (-100 if secs2due > 0 else 100 if secs2due < 0 else 0)  # Only depend on overdue or not
     max_exponent = 308
     try:
-        weight = max(1, min(10 ** max_exponent, weight * weight_factor))
+        weight = max(0.1, min(10 ** max_exponent, weight * weight_factor))
     except (OverflowError, ZeroDivisionError):
         weight = 10 ** max_exponent
 
@@ -238,8 +239,9 @@ def update_weights(bible, eligible_references):
     now = datetime.now(timezone.utc)
     
     eligible_references = [
-        (book, chapter, verse, get_weight(bible, book, chapter, verse, now)) 
+        (book, chapter, verse, weight) 
         for (book, chapter, verse, _) in eligible_references
+        if (weight := get_weight(bible, book, chapter, verse, now)) >= 1
     ]
     return eligible_references
 
@@ -282,6 +284,9 @@ def get_random_reference(settings):
     ## Refresh weights before sampling
     eligible_references = update_weights(settings["bible"], settings["eligible_references"])
 
+    if not eligible_references:
+        return None, None, None, -1
+
     if False:  # Optional debugging
         get_top_n(eligible_references, 20)
 
@@ -295,7 +300,7 @@ def get_random_reference(settings):
         book, chapter, verse, weight = random.choice(top_refs)
         debug(f"Randomly selected from top-weighted references: {book} {chapter}:{verse} with weight={weight}")
     
-    return book, chapter, verse
+    return book, chapter, verse, weight
 
 def get_surrounding_verses(bible, book, chapter, verse):
     debug(f"Getting verses surrounding: {book} {chapter}:{verse}")
@@ -850,7 +855,14 @@ def review(request: Request):
 
     debug(f"[GET] /review - user_id={user_id}")
 
-    book, chapter, verse = get_random_reference(settings)
+    book, chapter, verse, weight = get_random_reference(settings)
+
+    if weight < 0:
+        url = URL("/").include_query_params(message=(
+            "Please expand the Review Selection in Settings before reviewing."
+        ))
+        response = RedirectResponse(url)
+        return response
 
     return render_review(request, user_id, book, chapter, verse)
 
