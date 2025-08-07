@@ -117,6 +117,7 @@ def load_user_settings_from_db(user_id: str):
     books = set(settings.get("books", []))
     chapters = settings.get("chapters", {})
     selected_verses = settings.get("selected_verses", {})
+    verse_selection = settings.get("verse_selection", {})
     translation = settings.get("translation", "esv")  # Default to ESV
     priority = settings.get("priority", "weighted")
 
@@ -141,7 +142,13 @@ def load_user_settings_from_db(user_id: str):
 
     ## Load derived data
     bible = get_bible_translation(translation=translation, bool_counts=bool(priority=="weighted"), user_data=user_data)
-    eligible_references = get_eligible_references(bible, testaments, books, chapters, selected_verses)
+    eligible_references = get_eligible_references(
+        bible,
+        testaments,
+        books,
+        chapters,
+        selected_verses if verse_selection else "",
+    )
 
     ## Cache full user config
     full_settings = {
@@ -771,7 +778,7 @@ def save_settings(
             selected_testaments,
             set(selected_books),
             chapter_map,
-            selected_verses,
+            selected_verses if verse_selection else "",
         ),
         "user_data": user_data,
         "scheduler": scheduler,
