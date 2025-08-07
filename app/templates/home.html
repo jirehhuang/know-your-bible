@@ -9,12 +9,28 @@
       font-size: 1.5em;
       padding: 10px 20px;
     }
+
+    .message {
+      color: #b91c1c; /* red-700 */
+      background-color: #fef2f2; /* red-50 */
+      border: 1px solid #fca5a5; /* red-300 */
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 1.1em;
+      margin-bottom: 40px;
+    }
   </style>
 {% endblock %}
 
 {% block content %}
   <h1>Know Your Bible</h1>
   <br>
+
+  {% if request.query_params.message %}
+    <div class="message">
+      ⚠️ {{ request.query_params.message }}
+    </div>
+  {% endif %}
 
   <form action="/review" method="get" style="margin-bottom: 20px;">
     <button type="submit" autofocus>Review</button>
