@@ -215,11 +215,6 @@ def test_cases(cases):
 
         print(f"✅ Test case {i} passed\n")
 
-def sort_and_compress_references(references):
-    ## TODO: Implement
-    compressed_references = references
-    return compressed_references
-
 def update_references_from_sentences(input_path: str):
     with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
