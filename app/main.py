@@ -609,6 +609,7 @@ def get_review_data(settings):
     user_id = settings.get("settings", {}).get("user_id", "")
     translation = settings.get("settings", {}).get("translation", "esv")
     scheduler = settings.get("scheduler", None)
+    eligible_references = settings.get("eligible_references", [])
     now = datetime.now(timezone.utc)
 
     if "@" not in user_id or not scheduler:
@@ -617,28 +618,26 @@ def get_review_data(settings):
     ## Reviewed and total score
     review_data = []
     bible = settings["bible"]
-    for book in bible:
-        for chapter in bible[book]:
-            for verse in bible[book][chapter]:
-                verse_dict = bible[book][chapter][verse]
-                card = verse_dict.get("user_data", {}).get("card", None)
-                if not card:
-                    card_dict = verse_dict.get("user_data", {}).get("card_dict", {})
-                    card = Card.from_dict(card_dict) if card_dict else None
-                if card:
-                    due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
-                    due_in = (datetime.fromisoformat(due_str) - now).total_seconds()
-                    review_data.append({
-                        "verse": f"{book} {chapter}:{verse}",
-                        "score": verse_dict["user_data"]["score"],
-                        "time": verse_dict["user_data"]["timer"],
-                        "distance": verse_dict["user_data"]["distance"],
-                        "due": due_str,
-                        "due_in_days": due_in / 60 / 60 / 24,
-                        "due_in_str": pretty_sec(due_in),
-                        "retrievability": scheduler.get_card_retrievability(card),
-                        "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
-                    })
+    for book, chapter, verse, _ in eligible_references:
+        verse_dict = bible[book][chapter][verse]
+        card = verse_dict.get("user_data", {}).get("card", None)
+        if not card:
+            card_dict = verse_dict.get("user_data", {}).get("card_dict", {})
+            card = Card.from_dict(card_dict) if card_dict else None
+        if card:
+            due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
+            due_in = (datetime.fromisoformat(due_str) - now).total_seconds()
+            review_data.append({
+                "verse": f"{book} {chapter}:{verse}",
+                "score": verse_dict["user_data"]["score"],
+                "time": verse_dict["user_data"]["timer"],
+                "distance": verse_dict["user_data"]["distance"],
+                "due": due_str,
+                "due_in_days": due_in / 60 / 60 / 24,
+                "due_in_str": pretty_sec(due_in),
+                "retrievability": scheduler.get_card_retrievability(card),
+                "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
+            })
 
     return review_data
 
