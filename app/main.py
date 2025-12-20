@@ -1,11 +1,9 @@
 import os
 import re
 import logging
-import boto3
 import random
 import json
 import app.utils.cache as cache
-from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -39,18 +37,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
-try:
-    region = os.getenv("AWS_REGION")
-    dynamodb = boto3.resource("dynamodb", region_name=region)
-    logger.debug("Connected to DynamoDB.")
-except Exception as e:
-    logger.error("Failed to connect to DynamoDB", exc_info=True)
-    raise
-
-debug("Connecting to DynamoDB tables...")
-results_table = dynamodb.Table("know-your-bible-results")
-settings_table = dynamodb.Table("know-your-bible-settings")
 
 ## FastAPI app setup
 debug("Initializing FastAPI app...")
@@ -112,57 +98,43 @@ def convert_types(data, to="float"):
         return data
 
 def load_user_settings_from_db(user_id: str):
-    response = settings_table.get_item(Key={"user_id": user_id})
-    settings = convert_types(response.get("Item", {}), "float")
-    
-    testaments = set(settings.get("testaments", []))
-    books = set(settings.get("books", []))
-    chapters = settings.get("chapters", {})
-    selected_verses = settings.get("selected_verses", {})
-    verse_selection = settings.get("verse_selection", {})
-    translation = settings.get("translation", "esv")  # Default to ESV
-    priority = settings.get("priority", "weighted")
+    # No persistent storage; always return default settings from cache or initialize
+    settings = cache.get_cached_user_settings(user_id)
+    if settings:
+        return settings
 
-    ## Retrieve scheduler
-    scheduler_dict = settings.get("scheduler_dict")
-    scheduler = Scheduler.from_dict(scheduler_dict) if scheduler_dict else Scheduler()
+    # TODO: Retrieve from database
+    scheduler = Scheduler()
 
-    ## Load user data (results)
-    user_data = []
-    try:
-        paginator = results_table.meta.client.get_paginator("query")
-        page_iterator = paginator.paginate(
-            TableName=results_table.name,
-            KeyConditionExpression=Key("user_id").eq(user_id)
-        )
-        for page in page_iterator:
-            user_data.extend(page.get("Items", []))
-        user_data = convert_types(user_data, "float")
-    except Exception as e:
-        debug(f"⚠️ Error loading user data for {user_id}: {e}")
-        user_data = []
-
-    ## Load derived data
-    bible = get_bible_translation(translation=translation, bool_counts=bool(priority=="weighted"), user_data=user_data)
+    # Defaults
+    default_settings = {
+        "user_id": user_id,
+        "testaments": [],
+        "books": [],
+        "chapters": {},
+        "selected_verses": "",
+        "verse_selection": "",
+        "translation": "esv",
+        "selector": "random",
+        "priority": "weighted",
+        "scheduler_dict": scheduler.to_dict(),
+    }
+    bible = get_bible_translation(translation="esv", bool_counts=True, user_data=[])
     eligible_references = get_eligible_references(
         bible,
-        testaments,
-        books,
-        chapters,
-        selected_verses if verse_selection else "",
+        set(),
+        set(),
+        {},
+        "",
     )
-
-    ## Cache full user config
     full_settings = {
-        "settings": settings,
+        "settings": default_settings,
         "bible": bible,
         "eligible_references": eligible_references,
-        "user_data": user_data,
+        "user_data": [],
         "scheduler": scheduler,
     }
-
     cache.set_cached_user_settings(user_id, full_settings)
-
     return full_settings
 
 def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters, selected_verses):
@@ -669,7 +641,7 @@ async def auth(request: Request):
     response = RedirectResponse(url="/")
     response.set_cookie("user_id", email)
 
-    ## Preload and cache user settings
+    # Preload and cache user settings
     load_user_settings_from_db(user_id=email)
 
     return response
@@ -763,10 +735,7 @@ def save_settings(
         "scheduler_dict": scheduler.to_dict(),
     }
 
-    if True or "@" in user_id:  # TODO:
-        settings_table.put_item(Item=convert_types(new_settings, "Decimal"))
-        debug(f"Settings saved to DynamoDB for user_id={user_id}")
-
+    # Only cache, no DB
     bible = get_bible_translation(
         translation=translation, 
         bool_counts=bool(priority=="weighted"),
@@ -793,28 +762,9 @@ def save_settings(
 
 @app.post("/delete_user_data")
 async def delete_user_data(request: Request, user_id: str = Form(...)):
-    debug("Deleting user settings")
-    
-    ## Delete from settings_table (no sort key)
-    settings_items = settings_table.query(
-        KeyConditionExpression=Key("user_id").eq(user_id)
-    ).get("Items", [])
-
-    with settings_table.batch_writer() as batch:
-        for item in settings_items:
-            batch.delete_item(Key={"user_id": item["user_id"]})
-            
-    debug("Deleting user results")
-
-    ## Delete from results_table (has sort key "id")
-    results_items = results_table.query(
-        KeyConditionExpression=Key("user_id").eq(user_id)
-    ).get("Items", [])
-
-    with results_table.batch_writer() as batch:
-        for item in results_items:
-            batch.delete_item(Key={"user_id": item["user_id"], "id": item["id"]})
-
+    debug("Deleting user cache")
+    cache.set_cached_user_settings(user_id, None)
+    # TODO: Delete user settings and results
     return RedirectResponse(url="/settings", status_code=303)
 
 @app.get("/", response_class=HTMLResponse)
@@ -937,7 +887,6 @@ def submit(
         card.step = int(card.step)  # Ensure type
     card, review_log = scheduler.review_card(card, rating)
 
-    ## Write to DynamoDB if logged in to email
     interval_secs = (card.due - card.last_review).total_seconds()
 
     result = {
@@ -955,11 +904,8 @@ def submit(
         "due_str": card.due.isoformat(),
         "interval_secs": interval_secs,
     }
-    if True or "@" in user_id:  # TODO:
-        results_table.put_item(Item=convert_types(result, "Decimal"))
-        debug("✅ Result saved to DynamoDB")
-    
-    ## Update user data for verse
+    # TODO: Write to database
+
     settings["user_data"].append(result)
     settings["bible"][book][chapter][verse]["user_data"] = result | {"card": card}
     cache.set_cached_user_settings(user_id, settings)
