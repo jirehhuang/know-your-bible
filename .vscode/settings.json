@@ -1,0 +1,9 @@
+{
+    "editor.rulers": [79],  // PEP 8
+    "workbench.editor.wrapTabs": true,
+    "python.testing.pytestArgs": [
+        "tests", "--no-cov", "--url=latest"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+}
