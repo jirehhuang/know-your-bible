@@ -15,7 +15,6 @@ from uuid6 import uuid6
 from decimal import Decimal
 from math import floor, log10
 from authlib.integrations.starlette_client import OAuth
-from starlette.config import Config
 from starlette.middleware.sessions import SessionMiddleware
 from fsrs import Scheduler, Card, Rating, ReviewLog
 from word2number import w2n
@@ -23,6 +22,7 @@ from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_C
 from app.utils.tsk import parse_standard_ref, get_tsk_for_ref
 from app.utils.harmony import get_harmony_entries_for_verse
 from data.references.get_resource_references import extract_references
+from dotenv import load_dotenv
 
 DEBUG_MODE = True  # Global debug mode flag
 
@@ -30,16 +30,18 @@ def debug(msg):
     if DEBUG_MODE:
         print(f"[DEBUG] {msg}")
 
+
 debug("🟢 main.py is loading")
 
-## DynamoDB setup
-config = Config(".env")
+
+## Load environment variables from .env
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 try:
-    region = config("AWS_REGION")
+    region = os.getenv("AWS_REGION")
     dynamodb = boto3.resource("dynamodb", region_name=region)
     logger.debug("Connected to DynamoDB.")
 except Exception as e:
@@ -67,11 +69,11 @@ debug("Templates loaded from: app/templates")
 ## Set up Google login
 app.add_middleware(SessionMiddleware, secret_key="YOUR_RANDOM_SECRET")
 
-oauth = OAuth(config)
+oauth = OAuth()
 oauth.register(
     name='google',
-    client_id=config('GOOGLE_CLIENT_ID'),
-    client_secret=config('GOOGLE_CLIENT_SECRET'),
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'},
 )
