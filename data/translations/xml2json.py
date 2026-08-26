@@ -1,6 +1,7 @@
-from xml.etree import ElementTree as ET
 import json
 import os
+from xml.etree import ElementTree as ET
+
 
 def xml_to_json(xml_path: str) -> dict:
     """
@@ -23,7 +24,8 @@ def xml_to_json(xml_path: str) -> dict:
     Args:
         xml_path (str): Path to the XML file.
 
-    Returns:
+    Returns
+    -------
         dict: Nested dictionary of books, chapters, and verses with text.
     """
     print(f"Parsing XML file: {xml_path}")
@@ -47,13 +49,16 @@ def xml_to_json(xml_path: str) -> dict:
                     "text": text,
                 }
 
-            print(f"    Processed Chapter {chapter_index} with {len(chapter_dict)} verses.")
+            print(
+                f"    Processed Chapter {chapter_index} with {len(chapter_dict)} verses."
+            )
             book_dict[chapter_index] = chapter_dict
 
         bible_dict[book_name] = book_dict
 
     print(f"Finished parsing: {xml_path}")
     return bible_dict
+
 
 if __name__ == "__main__":
     print("Starting XML to JSON conversion...")
@@ -70,7 +75,11 @@ if __name__ == "__main__":
             try:
                 # Convert and write JSON file
                 data = xml_to_json(os.path.join("translations", filename))
-                with open(os.path.join("translations", json_filename), "w", encoding="utf-8") as f:
+                with open(
+                    os.path.join("translations", json_filename),
+                    "w",
+                    encoding="utf-8",
+                ) as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
                 print(f"Successfully wrote: {json_filename}")
             except Exception as e:

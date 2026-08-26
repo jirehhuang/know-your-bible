@@ -1,28 +1,44 @@
-import os
-import re
 import logging
+import os
 import random
-import json
-import app.utils.cache as cache
-from fastapi import FastAPI, Request, Form
+import re
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from math import floor
+
+import sqlalchemy
+from authlib.integrations.starlette_client import OAuth
+from dotenv import load_dotenv
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from datetime import datetime, timezone, timedelta
-from uuid6 import uuid6
-from decimal import Decimal
-from math import floor, log10
-from authlib.integrations.starlette_client import OAuth
+from fsrs import Card, Scheduler
 from starlette.middleware.sessions import SessionMiddleware
-from fsrs import Scheduler, Card, Rating, ReviewLog
+from uuid6 import uuid6
 from word2number import w2n
-from app.utils.bible import get_bible_translation, OT_BOOKS, NT_BOOKS, CHAPTER_COUNTS, AVAIL_TRANSLATIONS
-from app.utils.tsk import parse_standard_ref, get_tsk_for_ref
+
+from app.utils import cache
+from app.utils.bible import (
+    AVAIL_TRANSLATIONS,
+    CHAPTER_COUNTS,
+    NT_BOOKS,
+    OT_BOOKS,
+    get_bible_translation,
+)
+from app.utils.db import (
+    ReviewResult,
+    UserSettings,
+    async_session_factory,
+    dumps_json,
+    init_db,
+)
 from app.utils.harmony import get_harmony_entries_for_verse
+from app.utils.tsk import get_tsk_for_ref, parse_standard_ref
 from data.references.get_resource_references import extract_references
-from dotenv import load_dotenv
 
 DEBUG_MODE = True  # Global debug mode flag
+
 
 def debug(msg):
     if DEBUG_MODE:
@@ -38,9 +54,18 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    ## Create DB tables on boot (idempotent)
+    await init_db()
+    debug("Database initialized")
+    yield
+
+
 ## FastAPI app setup
 debug("Initializing FastAPI app...")
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 static_dir = "app/static"
 if os.path.exists(static_dir):
@@ -53,60 +78,60 @@ templates = Jinja2Templates(directory="app/templates")
 debug("Templates loaded from: app/templates")
 
 ## Set up Google login
-app.add_middleware(SessionMiddleware, secret_key="YOUR_RANDOM_SECRET")
+app.add_middleware(
+    SessionMiddleware, secret_key=os.environ["SESSION_SECRET_KEY"]
+)
 
 oauth = OAuth()
 oauth.register(
-    name='google',
-    client_id=os.getenv('GOOGLE_CLIENT_ID'),
-    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'},
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
 )
 
 ## Ease rating
-RATING_MAP = {
-    1: "Again",
-    2: "Hard",
-    3: "Good",
-    4: "Easy"
-}
+RATING_MAP = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}
 
 ORDINAL_MAP = {
-    "first": "1", "1st": "1", "one": "1",
-    "second": "2", "2nd": "2", "two": "2",
-    "third": "3", "3rd": "3", "three": "3",
-    "fourth": "4", "four": "4", "fifth": "5", "five": "5",
-    "six": "6", "sixth": "6", "seven": "7", "seventh": "7",
-    "eight": "8", "eighth": "8", "nine": "9", "ninth": "9",
-    "ten": "10", "tenth": "10", "eleven": "11", "twelve": "12"
+    "first": "1",
+    "1st": "1",
+    "one": "1",
+    "second": "2",
+    "2nd": "2",
+    "two": "2",
+    "third": "3",
+    "3rd": "3",
+    "three": "3",
+    "fourth": "4",
+    "four": "4",
+    "fifth": "5",
+    "five": "5",
+    "six": "6",
+    "sixth": "6",
+    "seven": "7",
+    "seventh": "7",
+    "eight": "8",
+    "eighth": "8",
+    "nine": "9",
+    "ninth": "9",
+    "ten": "10",
+    "tenth": "10",
+    "eleven": "11",
+    "twelve": "12",
 }
 
-def convert_types(data, to="float"):
-    """
-    Recursively convert all Decimal to float (to='float') or float to Decimal (to='decimal') in a JSON-like structure.
-    """
-    if isinstance(data, dict):
-        return {k: convert_types(v, to) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [convert_types(v, to) for v in data]
-    elif to.lower() == "float" and isinstance(data, Decimal):
-        return float(data)
-    elif to.lower() == "decimal" and isinstance(data, float):
-        return Decimal(str(data))  # Use str to preserve precision
-    else:
-        return data
 
-def load_user_settings_from_db(user_id: str):
-    # No persistent storage; always return default settings from cache or initialize
+async def load_user_settings_from_db(user_id: str):
+    """Load user settings with read-through cache in front of SQLite."""
     settings = cache.get_cached_user_settings(user_id)
     if settings:
         return settings
 
-    # TODO: Retrieve from database
     scheduler = Scheduler()
 
-    # Defaults
+    ## Defaults
     default_settings = {
         "user_id": user_id,
         "testaments": [],
@@ -119,7 +144,20 @@ def load_user_settings_from_db(user_id: str):
         "priority": "weighted",
         "scheduler_dict": scheduler.to_dict(),
     }
-    bible = get_bible_translation(translation="esv", bool_counts=True, user_data=[])
+
+    async with async_session_factory() as session:
+        row = await session.get(UserSettings, user_id)
+
+    if row is not None:
+        persisted = row.to_settings_dict()
+        default_settings.update(persisted)
+        scheduler = Scheduler.from_dict(default_settings["scheduler_dict"])
+
+    bible = get_bible_translation(
+        translation=default_settings["translation"],
+        bool_counts=True,
+        user_data=[],
+    )
     eligible_references = get_eligible_references(
         bible,
         set(),
@@ -134,21 +172,46 @@ def load_user_settings_from_db(user_id: str):
         "user_data": [],
         "scheduler": scheduler,
     }
+
+    if row is None:
+        ## First visit: persist the defaults
+        await upsert_user_settings(user_id, default_settings)
+
     cache.set_cached_user_settings(user_id, full_settings)
     return full_settings
 
-def get_eligible_references(bible, selected_testaments, selected_books, selected_chapters, selected_verses):
+
+async def upsert_user_settings(user_id: str, settings_dict: dict) -> None:
+    """Insert or update the UserSettings row for a user."""
+    settings_dict = {**settings_dict, "user_id": user_id}
+    row = UserSettings.from_settings_dict(settings_dict)
+    async with async_session_factory() as session:
+        await session.merge(row)
+        await session.commit()
+
+
+def get_eligible_references(
+    bible,
+    selected_testaments,
+    selected_books,
+    selected_chapters,
+    selected_verses,
+):
     ## Add entire testament(s)
     selected_books |= set(OT_BOOKS if "old" in selected_testaments else [])
     selected_books |= set(NT_BOOKS if "new" in selected_testaments else [])
-    selected_verses = set(
-        [
-            verse 
-            for item in extract_references(selected_verses) 
-            for verse in item["verses"]
-        ]
-    ) if selected_verses else ""
-    
+    selected_verses = (
+        set(
+            [
+                verse
+                for item in extract_references(selected_verses)
+                for verse in item["verses"]
+            ]
+        )
+        if selected_verses
+        else ""
+    )
+
     eligible_references = []
 
     for book in bible:
@@ -156,15 +219,23 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
         if book in selected_books:
             for chapter in chapters:
                 for verse in chapters[chapter]:
-                    if not selected_verses or f"{book} {chapter}:{verse}" in selected_verses:
+                    if (
+                        not selected_verses
+                        or f"{book} {chapter}:{verse}" in selected_verses
+                    ):
                         eligible_references.append((book, chapter, verse, 1))
         elif book in selected_chapters:
             for ch in selected_chapters[book]:
                 ch_str = str(ch)
                 if ch_str in chapters:
                     for verse in chapters[ch_str]:
-                        if not selected_verses or f"{book} {ch_str}:{verse}" in selected_verses:
-                            eligible_references.append((book, chapter, verse, 1))
+                        if (
+                            not selected_verses
+                            or f"{book} {ch_str}:{verse}" in selected_verses
+                        ):
+                            eligible_references.append(
+                                (book, chapter, verse, 1)
+                            )
                 else:
                     debug(f"⚠️ Chapter {ch_str} not found in {book}")
 
@@ -173,14 +244,25 @@ def get_eligible_references(bible, selected_testaments, selected_books, selected
         for book in bible:
             for chapter in bible[book]:
                 for verse in bible[book][chapter]:
-                    if not selected_verses or f"{book} {chapter}:{verse}" in selected_verses:
+                    if (
+                        not selected_verses
+                        or f"{book} {chapter}:{verse}" in selected_verses
+                    ):
                         eligible_references.append((book, chapter, verse, 1))
 
     # debug(f"eligible_references: {json.dumps(eligible_references, indent=2)}")
-    
+
     return eligible_references
 
-def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upweight=["John MacArthur", "John Piper"]):
+
+def get_weight(
+    bible,
+    book,
+    chapter,
+    verse,
+    now=datetime.now(timezone.utc),
+    upweight=["John MacArthur", "John Piper"],
+):
     ## Initial weight "prior"
     verse_dict = bible[book][chapter][verse]
     weight = verse_dict.get("weight", 1)
@@ -190,32 +272,47 @@ def get_weight(bible, book, chapter, verse, now=datetime.now(timezone.utc), upwe
         weight += verse_dict.get(upweight_key, 0)
 
     ## Adjust by due date, if any
-    due = datetime.fromisoformat(verse_dict.get("user_data", {}).get("due_str", now.isoformat()))
+    due = datetime.fromisoformat(
+        verse_dict.get("user_data", {}).get("due_str", now.isoformat())
+    )
     secs2due = (due - now).total_seconds()
-    # interval_secs = max(1, verse_dict.get("user_data", {}).get("interval_secs", 1))
+    interval_secs = max(
+        1, verse_dict.get("user_data", {}).get("interval_secs", 1)
+    )
 
     ## Adjust weight by factor
-    weight_factor = 10 ** (-100 if secs2due > 0 else 100 if secs2due < 0 else 0)  # Only depend on overdue or not
+    weight_factor = 10 ** (
+        -100 if secs2due > 0 else 100 if secs2due < 0 else 0
+    )  # Only depend on overdue or not
     max_exponent = 308
     try:
-        weight = max(1, min(10 ** max_exponent, weight * weight_factor))
+        weight = max(1, min(10**max_exponent, weight * weight_factor))
     except (OverflowError, ZeroDivisionError):
-        weight = 10 ** max_exponent
+        weight = 10**max_exponent
 
     ## Optional debugging
-    if False and book=="Titus" and str(chapter)=="3" and str(verse)=="10":
-        debug(f"{book} {chapter}:{verse} - interval_secs={pretty_sec(interval_secs)}, secs2due={pretty_sec(secs2due)}, weight={weight}")
+    if (
+        False
+        and book == "Titus"
+        and str(chapter) == "3"
+        and str(verse) == "10"
+    ):
+        debug(
+            f"{book} {chapter}:{verse} - interval_secs={pretty_sec(interval_secs)}, secs2due={pretty_sec(secs2due)}, weight={weight}"
+        )
 
     return weight
 
+
 def update_weights(bible, eligible_references):
     now = datetime.now(timezone.utc)
-    
+
     eligible_references = [
-        (book, chapter, verse, get_weight(bible, book, chapter, verse, now)) 
+        (book, chapter, verse, get_weight(bible, book, chapter, verse, now))
         for (book, chapter, verse, _) in eligible_references
     ]
     return eligible_references
+
 
 ## Weighted sampling helper
 def weighted_sample(choices):
@@ -229,18 +326,23 @@ def weighted_sample(choices):
     ## Fallback to last item in case of rounding issues
     return choices[-1]
 
+
 def get_top_n(eligible_references, n):
     """
     Prints and returns the top n references based on weight.
 
-    Parameters:
+    Parameters
+    ----------
         eligible_references (list): List of tuples (book, chapter, verse, weight).
         n (int): Number of top references to return.
 
-    Returns:
+    Returns
+    -------
         list: Top n references sorted by descending weight.
     """
-    top_refs = sorted(eligible_references, key=lambda x: x[3], reverse=True)[:n]
+    top_refs = sorted(eligible_references, key=lambda x: x[3], reverse=True)[
+        :n
+    ]
 
     print("\nTop Verses by Weight:")
     print("-" * 35)
@@ -251,10 +353,13 @@ def get_top_n(eligible_references, n):
 
     return top_refs
 
+
 ## Get random verse reference using weights
 def get_random_reference(settings):
     ## Refresh weights before sampling
-    eligible_references = update_weights(settings["bible"], settings["eligible_references"])
+    eligible_references = update_weights(
+        settings["bible"], settings["eligible_references"]
+    )
 
     if False:  # Optional debugging
         get_top_n(eligible_references, 20)
@@ -262,14 +367,19 @@ def get_random_reference(settings):
     selector = settings.get("settings", {}).get("selector", "random")
     if selector == "random":
         book, chapter, verse, weight = weighted_sample(eligible_references)
-        debug(f"Random reference selected: {book} {chapter}:{verse} with weight={weight}")
+        debug(
+            f"Random reference selected: {book} {chapter}:{verse} with weight={weight}"
+        )
     else:  # elif selector == "greedy":
         max_weight = max(w for _, _, _, w in eligible_references)
         top_refs = [ref for ref in eligible_references if ref[3] == max_weight]
         book, chapter, verse, weight = random.choice(top_refs)
-        debug(f"Randomly selected from top-weighted references: {book} {chapter}:{verse} with weight={weight}")
-    
+        debug(
+            f"Randomly selected from top-weighted references: {book} {chapter}:{verse} with weight={weight}"
+        )
+
     return book, chapter, verse
+
 
 def get_surrounding_verses(bible, book, chapter, verse):
     debug(f"Getting verses surrounding: {book} {chapter}:{verse}")
@@ -321,6 +431,7 @@ def get_surrounding_verses(bible, book, chapter, verse):
     curr_text = get_text(chapter, verse)
     return prev_text, curr_text, next_text
 
+
 def normalize_natural_number(s: str) -> int:
     s = s.lower().replace("-", " ").strip()
     if s in ORDINAL_MAP:
@@ -330,21 +441,20 @@ def normalize_natural_number(s: str) -> int:
     except ValueError:
         return int(s) if s.isdigit() else None
 
+
 def normalize_book_input(input_text):
     """Convert 'First Peter' → '1 Peter', normalize spacing"""
     input_text = input_text.lower().replace("-", " ").strip()
     for word, digit in ORDINAL_MAP.items():
-        input_text = re.sub(rf'\b{word}\b', digit, input_text)
+        input_text = re.sub(rf"\b{word}\b", digit, input_text)
     input_text = re.sub(r"\s+", " ", input_text)
     return input_text
+
 
 def match_book_name(bible, input_text):
     input_text_norm = normalize_book_input(input_text)
 
-    book_map = {
-        normalize_book_input(book): book
-        for book in bible
-    }
+    book_map = {normalize_book_input(book): book for book in bible}
 
     ## Exact match
     if input_text_norm in book_map:
@@ -353,7 +463,11 @@ def match_book_name(bible, input_text):
         return match, None
 
     ## Prefix match
-    candidates = [book for norm, book in book_map.items() if norm.startswith(input_text_norm)]
+    candidates = [
+        book
+        for norm, book in book_map.items()
+        if norm.startswith(input_text_norm)
+    ]
     if len(candidates) == 1:
         debug(f"Prefix match: '{input_text}' → '{candidates[0]}'")
         return candidates[0], None
@@ -362,7 +476,9 @@ def match_book_name(bible, input_text):
         return None, candidates
 
     ## Contains match
-    candidates = [book for norm, book in book_map.items() if input_text_norm in norm]
+    candidates = [
+        book for norm, book in book_map.items() if input_text_norm in norm
+    ]
     if len(candidates) == 1:
         debug(f"Contains match: '{input_text}' → '{candidates[0]}'")
         return candidates[0], None
@@ -373,11 +489,16 @@ def match_book_name(bible, input_text):
     debug(f"❌ No match for book name: '{input_text}'")
     return None, None
 
+
 def parse_natural_reference(bible, submitted_ref: str):
     submitted_ref = submitted_ref.lower().replace("-", " ")
     submitted_ref = re.sub(r"\s+", " ", submitted_ref).strip()
-    submitted_ref = re.sub(r'\s*:\s*', ':', submitted_ref)  # Remove whitespace around colon
-    submitted_ref = submitted_ref.replace("chapter", "")  # Remove optional chapter
+    submitted_ref = re.sub(
+        r"\s*:\s*", ":", submitted_ref
+    )  # Remove whitespace around colon
+    submitted_ref = submitted_ref.replace(
+        "chapter", ""
+    )  # Remove optional chapter
 
     # Normalize ordinals
     for word, digit in ORDINAL_MAP.items():
@@ -411,7 +532,9 @@ def parse_natural_reference(bible, submitted_ref: str):
             return None, None, None, None
 
     # ✅ Case 2: colon style like "1 peter 1:1"
-    match = re.match(r"^(?P<book_part>.+?) (?P<chapter>\d+):(?P<verse>\d+)$", submitted_ref)
+    match = re.match(
+        r"^(?P<book_part>.+?) (?P<chapter>\d+):(?P<verse>\d+)$", submitted_ref
+    )
     if match:
         book_raw = match.group("book_part").strip()
         chapter_raw = match.group("chapter")
@@ -427,14 +550,28 @@ def parse_natural_reference(bible, submitted_ref: str):
 
     return None, None, None, None
 
-def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_book, actual_ch, actual_v, timer):
+
+def calculate_score(
+    bible,
+    submitted_book,
+    submitted_ch,
+    submitted_v,
+    actual_book,
+    actual_ch,
+    actual_v,
+    timer,
+):
     bible_books = list(bible.keys())
 
     ## Calculate stars
     stars = int(
-        (actual_book==submitted_book) + 
-        (actual_book==submitted_book and actual_ch==submitted_ch) + 
-        (actual_book==submitted_book and actual_ch==submitted_ch and actual_v==submitted_v)
+        (actual_book == submitted_book)
+        + (actual_book == submitted_book and actual_ch == submitted_ch)
+        + (
+            actual_book == submitted_book
+            and actual_ch == submitted_ch
+            and actual_v == submitted_v
+        )
     )
 
     def flat_index(book, chapter, verse):
@@ -444,7 +581,11 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
             for ch in sorted(chapters, key=lambda x: int(x)):
                 verses = chapters[ch]
                 for v in sorted(verses, key=lambda x: int(x)):
-                    if (b == book) and (int(ch) == int(chapter)) and (int(v) == int(verse)):
+                    if (
+                        (b == book)
+                        and (int(ch) == int(chapter))
+                        and (int(v) == int(verse))
+                    ):
                         return index
                     index += 1
         return index
@@ -471,32 +612,38 @@ def calculate_score(bible, submitted_book, submitted_ch, submitted_v, actual_boo
         rating = 2
     else:
         rating = 1
-    
-    debug(f"Calculated score: {score} (distance: {distance}, timer: {timer}, stars: {stars}, rating: {rating})")
+
+    debug(
+        f"Calculated score: {score} (distance: {distance}, timer: {timer}, stars: {stars}, rating: {rating})"
+    )
     return stars, distance, score, rating
+
 
 def get_user_id(request: Request) -> str:
     user_id = request.cookies.get("user_id")
     if user_id:
         debug(f"Identified user: {user_id}")
         return user_id
-    
-    # new_user_id = str(uuid6())
-    new_user_id = str(datetime.now(timezone.utc).isoformat())
+
+    new_user_id = str(uuid6())
     debug(f"Anonymous session: {new_user_id}")
     return new_user_id
 
+
 def get_user_id_settings(request: Request) -> str:
-    user_id = get_user_id(request)
-    settings = cache.get_cached_user_settings(user_id) or load_user_settings_from_db(user_id)
+    settings = getattr(request.state, "settings", None)
+    if settings is None:
+        raise RuntimeError("Settings not loaded; middleware must run first")
+    user_id = settings["settings"]["user_id"]
     return user_id, settings
+
 
 def get_user_stats(settings):
     now = datetime.now(timezone.utc)
     user_id = settings.get("settings", {}).get("user_id", "")
     user_data = settings.get("user_data", [])
 
-    if "@" not in user_id or not user_data:
+    if not user_data:
         user_stats = {
             "date_time": now,
             "verses_reviewed": 0,
@@ -506,7 +653,7 @@ def get_user_stats(settings):
             "points_30days": 0,
         }
         return user_stats
-    
+
     ## Reviewed and total score
     verses_reviewed = 0
     total_stars = 0
@@ -524,11 +671,20 @@ def get_user_stats(settings):
                     ## Compute stars if necessary
                     verse_stars = verse_data.get("stars", None)
                     if not verse_stars:
-                        submitted_book, submitted_ch, submitted_v = parse_standard_ref(verse_data["submitted"])
+                        submitted_book, submitted_ch, submitted_v = (
+                            parse_standard_ref(verse_data["submitted"])
+                        )
                         verse_stars = int(
-                            (book==submitted_book) + 
-                            (book==submitted_book and chapter==str(submitted_ch)) +
-                            (book==submitted_book and chapter==str(submitted_ch) and verse==str(submitted_v))
+                            (book == submitted_book)
+                            + (
+                                book == submitted_book
+                                and chapter == str(submitted_ch)
+                            )
+                            + (
+                                book == submitted_book
+                                and chapter == str(submitted_ch)
+                                and verse == str(submitted_v)
+                            )
                         )
                         # if False:  # Optional debugging
                         #     debug(f"actual={book} {chapter}:{verse}, submitted={verse_data["submitted"]}, parsed={submitted_book} {submitted_ch}:{submitted_v}, stars={verse_stars}")
@@ -544,7 +700,10 @@ def get_user_stats(settings):
         for item in user_data
         if "timestamp" in item
         and isinstance(item["timestamp"], str)
-        and datetime.fromisoformat(item["timestamp"]).replace(tzinfo=timezone.utc) >= thirty_days_ago
+        and datetime.fromisoformat(item["timestamp"]).replace(
+            tzinfo=timezone.utc
+        )
+        >= thirty_days_ago
     )
 
     ## Return
@@ -558,6 +717,7 @@ def get_user_stats(settings):
     }
 
     return user_stats
+
 
 def pretty_sec(secs):
     bool_overdue = bool(secs < 0)
@@ -579,15 +739,16 @@ def pretty_sec(secs):
 
     return ("-" if bool_overdue else "") + " ".join(parts)
 
+
 def get_review_data(settings):
     user_id = settings.get("settings", {}).get("user_id", "")
     translation = settings.get("settings", {}).get("translation", "esv")
     scheduler = settings.get("scheduler", None)
     now = datetime.now(timezone.utc)
 
-    if "@" not in user_id or not scheduler:
+    if not scheduler:
         return []
-    
+
     ## Reviewed and total score
     review_data = []
     bible = settings["bible"]
@@ -597,35 +758,58 @@ def get_review_data(settings):
                 verse_dict = bible[book][chapter][verse]
                 card = verse_dict.get("user_data", {}).get("card", None)
                 if not card:
-                    card_dict = verse_dict.get("user_data", {}).get("card_dict", {})
+                    card_dict = verse_dict.get("user_data", {}).get(
+                        "card_dict", {}
+                    )
                     card = Card.from_dict(card_dict) if card_dict else None
                 if card:
-                    due_str = verse_dict.get("user_data", {}).get("due_str", now.isoformat())
-                    due_in = (datetime.fromisoformat(due_str) - now).total_seconds()
-                    review_data.append({
-                        "verse": f"{book} {chapter}:{verse}",
-                        "score": verse_dict["user_data"]["score"],
-                        "time": verse_dict["user_data"]["timer"],
-                        "distance": verse_dict["user_data"]["distance"],
-                        "due": due_str,
-                        "due_in_days": due_in / 60 / 60 / 24,
-                        "due_in_str": pretty_sec(due_in),
-                        "retrievability": scheduler.get_card_retrievability(card),
-                        "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
-                    })
+                    due_str = verse_dict.get("user_data", {}).get(
+                        "due_str", now.isoformat()
+                    )
+                    due_in = (
+                        datetime.fromisoformat(due_str) - now
+                    ).total_seconds()
+                    review_data.append(
+                        {
+                            "verse": f"{book} {chapter}:{verse}",
+                            "score": verse_dict["user_data"]["score"],
+                            "time": verse_dict["user_data"]["timer"],
+                            "distance": verse_dict["user_data"]["distance"],
+                            "due": due_str,
+                            "due_in_days": due_in / 60 / 60 / 24,
+                            "due_in_str": pretty_sec(due_in),
+                            "retrievability": scheduler.get_card_retrievability(
+                                card
+                            ),
+                            "url": f"https://ref.ly/{book} {chapter}:{verse};{translation}?t=biblia",
+                        }
+                    )
 
     return review_data
 
+
 @app.middleware("http")
 async def add_user_settings(request: Request, call_next):
-    user_id, settings = get_user_id_settings(request)
+    ## Skip DB/cache work for static files
+    if request.url.path.startswith("/static"):
+        return await call_next(request)
+    user_id = get_user_id(request)
+    settings = cache.get_cached_user_settings(user_id)
+    if settings is None:
+        settings = await load_user_settings_from_db(user_id)
     request.state.settings = settings
-    return await call_next(request)
+    response = await call_next(request)
+    ## Persist anonymous session id so it's reused on subsequent requests
+    if not request.cookies.get("user_id"):
+        response.set_cookie("user_id", user_id)
+    return response
+
 
 @app.get("/login")
 async def login(request: Request):
-    redirect_uri = request.url_for('auth')
+    redirect_uri = request.url_for("auth")
     return await oauth.google.authorize_redirect(request, redirect_uri)
+
 
 @app.get("/auth")
 async def auth(request: Request):
@@ -637,20 +821,22 @@ async def auth(request: Request):
         debug(f"parse_id_token failed: {e}")
         user_info = await oauth.google.userinfo(token=token)
 
-    email = user_info['email']
+    email = user_info["email"]
     response = RedirectResponse(url="/")
     response.set_cookie("user_id", email)
 
     # Preload and cache user settings
-    load_user_settings_from_db(user_id=email)
+    await load_user_settings_from_db(user_id=email)
 
     return response
+
 
 @app.get("/logout")
 def logout():
     response = RedirectResponse(url="/")
     response.delete_cookie("user_id")
     return response
+
 
 @app.get("/settings", response_class=HTMLResponse)
 def get_settings(request: Request):
@@ -663,34 +849,42 @@ def get_settings(request: Request):
     selected_chapters = settings.get("settings", {}).get("chapters", {})
     selected_verses = settings.get("settings", {}).get("selected_verses", "")
     verse_selection = settings.get("settings", {}).get("verse_selection", "")
-    selected_translation = settings.get("settings", {}).get("translation", "esv")
+    selected_translation = settings.get("settings", {}).get(
+        "translation", "esv"
+    )
     selected_selector = settings.get("settings", {}).get("selector", "random")
-    selected_priority = settings.get("settings", {}).get("priority", "weighted")
+    selected_priority = settings.get("settings", {}).get(
+        "priority", "weighted"
+    )
 
     user_stats = get_user_stats(settings)
     review_data = get_review_data(settings)
 
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
-        "user_id": user_id,
-        "ot_books": OT_BOOKS,
-        "nt_books": NT_BOOKS,
-        "chapter_counts": CHAPTER_COUNTS,
-        "avail_translations": AVAIL_TRANSLATIONS,
-        "selected_translation": selected_translation,
-        "selector": selected_selector,
-        "priority": selected_priority,
-        "selected_testaments": selected_testaments,
-        "selected_books": selected_books,
-        "selected_chapters": selected_chapters,
-        "selected_verses": selected_verses,
-        "verse_selection": verse_selection,
-        "stats": user_stats,
-        "review_data": review_data,
-    })
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "user_id": user_id,
+            "ot_books": OT_BOOKS,
+            "nt_books": NT_BOOKS,
+            "chapter_counts": CHAPTER_COUNTS,
+            "avail_translations": AVAIL_TRANSLATIONS,
+            "selected_translation": selected_translation,
+            "selector": selected_selector,
+            "priority": selected_priority,
+            "selected_testaments": selected_testaments,
+            "selected_books": selected_books,
+            "selected_chapters": selected_chapters,
+            "selected_verses": selected_verses,
+            "verse_selection": verse_selection,
+            "stats": user_stats,
+            "review_data": review_data,
+        },
+    )
+
 
 @app.post("/settings", response_class=HTMLResponse)
-def save_settings(
+async def save_settings(
     request: Request,
     selected_testaments: list[str] = Form(default=[]),
     selected_books: list[str] = Form(default=[]),
@@ -735,52 +929,71 @@ def save_settings(
         "scheduler_dict": scheduler.to_dict(),
     }
 
-    # Only cache, no DB
+    # Update cache and persist to DB
     bible = get_bible_translation(
-        translation=translation, 
-        bool_counts=bool(priority=="weighted"),
-        user_data=user_data
+        translation=translation,
+        bool_counts=bool(priority == "weighted"),
+        user_data=user_data,
     )
-    cache.set_cached_user_settings(user_id, {
-        "settings": new_settings,
-        "bible": bible,
-        "eligible_references": get_eligible_references(
-            bible,
-            selected_testaments,
-            set(selected_books),
-            chapter_map,
-            selected_verses if verse_selection else "",
-        ),
-        "user_data": user_data,
-        "scheduler": scheduler,
-    })
+    cache.set_cached_user_settings(
+        user_id,
+        {
+            "settings": new_settings,
+            "bible": bible,
+            "eligible_references": get_eligible_references(
+                bible,
+                selected_testaments,
+                set(selected_books),
+                chapter_map,
+                selected_verses if verse_selection else "",
+            ),
+            "user_data": user_data,
+            "scheduler": scheduler,
+        },
+    )
+    await upsert_user_settings(user_id, new_settings)
     debug(f"Settings saved for user_id={user_id}")
 
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie("user_id", user_id)
     return response
 
+
 @app.post("/delete_user_data")
 async def delete_user_data(request: Request, user_id: str = Form(...)):
-    debug("Deleting user cache")
+    debug(f"Deleting user data for user_id={user_id}")
     cache.set_cached_user_settings(user_id, None)
-    # TODO: Delete user settings and results
+    async with async_session_factory() as session:
+        settings_row = await session.get(UserSettings, user_id)
+        if settings_row is not None:
+            await session.delete(settings_row)
+        await session.execute(
+            sqlalchemy.delete(ReviewResult).where(
+                ReviewResult.user_id == user_id
+            )
+        )
+        await session.commit()
     return RedirectResponse(url="/settings", status_code=303)
+
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     debug("[GET] /")
-    return templates.TemplateResponse("home.html", {"request": request})
+    return templates.TemplateResponse(request, "home.html")
 
-def render_review(request, user_id, book, chapter, verse, start_timer=0, error=None):
+
+def render_review(
+    request, user_id, book, chapter, verse, start_timer=0, error=None
+):
     user_id, settings = get_user_id_settings(request)
     bible = settings["bible"]
 
-    prev_text, curr_text, next_text = get_surrounding_verses(bible, book, chapter, verse)
+    prev_text, curr_text, next_text = get_surrounding_verses(
+        bible, book, chapter, verse
+    )
     reference = f"{book} {chapter}:{verse}"
 
     context = {
-        "request": request,
         "prev_text": prev_text,
         "curr_text": curr_text,
         "next_text": next_text,
@@ -793,9 +1006,10 @@ def render_review(request, user_id, book, chapter, verse, start_timer=0, error=N
         "error": error,
     }
 
-    response = templates.TemplateResponse("review.html", context)
+    response = templates.TemplateResponse(request, "review.html", context)
     response.set_cookie(key="user_id", value=user_id)
     return response
+
 
 @app.get("/review", response_class=HTMLResponse)
 def review(request: Request):
@@ -807,15 +1021,16 @@ def review(request: Request):
 
     return render_review(request, user_id, book, chapter, verse)
 
+
 @app.post("/submit", response_class=HTMLResponse)
-def submit(
+async def submit(
     request: Request,
     submitted_ref: str = Form(...),
     actual_ref: str = Form(...),
     book: str = Form(...),
     chapter: str = Form(...),
     verse: str = Form(...),
-    timer: float = Form(0.0)
+    timer: float = Form(0.0),
 ):
     user_id, settings = get_user_id_settings(request)
     bible = settings["bible"]
@@ -828,41 +1043,75 @@ def submit(
     actual_v = verse
 
     ## Parse submitted reference
-    matched_book, submitted_ch, submitted_v, ambiguous_candidates = parse_natural_reference(bible, submitted_ref)
+    matched_book, submitted_ch, submitted_v, ambiguous_candidates = (
+        parse_natural_reference(bible, submitted_ref)
+    )
 
     if matched_book == "AMBIGUOUS":
-        debug(f"❌ Ambiguous book name: candidates={ambiguous_candidates or []}")
+        debug(
+            f"❌ Ambiguous book name: candidates={ambiguous_candidates or []}"
+        )
         return render_review(
-            request, user_id, book, actual_ch, actual_v, timer,
-            error=f"Ambiguous book name: '{submitted_ref}'. Did you mean {', '.join(ambiguous_candidates or [])}?"
+            request,
+            user_id,
+            book,
+            actual_ch,
+            actual_v,
+            timer,
+            error=f"Ambiguous book name: '{submitted_ref}'. Did you mean {', '.join(ambiguous_candidates or [])}?",
         )
 
     ## Fallback to strict Book 1:1 parsing
     if not matched_book:
-        match = re.match(r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref)
+        match = re.match(
+            r"^\s*([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s*$", submitted_ref
+        )
         if match:
             submitted_book_raw, submitted_ch, submitted_v = match.groups()
-            matched_book, candidates = match_book_name(bible, submitted_book_raw)
+            matched_book, candidates = match_book_name(
+                bible, submitted_book_raw
+            )
             if candidates:
                 return render_review(
-                    request, user_id, book, actual_ch, actual_v, timer,
-                    error=f"Ambiguous book name: '{submitted_book_raw}'. Did you mean {', '.join(candidates or [])}?"
+                    request,
+                    user_id,
+                    book,
+                    actual_ch,
+                    actual_v,
+                    timer,
+                    error=f"Ambiguous book name: '{submitted_book_raw}'. Did you mean {', '.join(candidates or [])}?",
                 )
 
     if not matched_book:
         debug("❌ Could not parse natural reference")
-        return render_review(request, user_id, book, actual_ch, actual_v, timer,
-                            error=f"Could not understand reference: '{submitted_ref}'. Try 'Genesis 1:1' or 'First John one verse two'.")
+        return render_review(
+            request,
+            user_id,
+            book,
+            actual_ch,
+            actual_v,
+            timer,
+            error=f"Could not understand reference: '{submitted_ref}'. Try 'Genesis 1:1' or 'First John one verse two'.",
+        )
 
     ## Check if book, chapter, and verse exist in bible
     if (
         matched_book not in bible
-        or int(submitted_ch) < 1 or int(submitted_ch) > len(bible[matched_book])
-        or int(submitted_v) < 1 or int(submitted_v) > len(bible[matched_book][submitted_ch])
+        or int(submitted_ch) < 1
+        or int(submitted_ch) > len(bible[matched_book])
+        or int(submitted_v) < 1
+        or int(submitted_v) > len(bible[matched_book][submitted_ch])
     ):
         debug("❌ Reference does not exist in bible data")
-        return render_review(request, user_id, book, actual_ch, actual_v, timer,
-                             error=f"Reference not found: '{matched_book} {submitted_ch}:{submitted_v}'.")
+        return render_review(
+            request,
+            user_id,
+            book,
+            actual_ch,
+            actual_v,
+            timer,
+            error=f"Reference not found: '{matched_book} {submitted_ch}:{submitted_v}'.",
+        )
 
     normalized_submitted_ref = f"{matched_book} {submitted_ch}:{submitted_v}"
     debug(f"Submitted: {normalized_submitted_ref}")
@@ -870,18 +1119,29 @@ def submit(
     debug(f"Timer: {timer}s")
 
     ## Calculate score based on verse distance
-    stars, distance, score, rating = calculate_score(bible, matched_book, submitted_ch, submitted_v, book, actual_ch, actual_v, timer)
+    stars, distance, score, rating = calculate_score(
+        bible,
+        matched_book,
+        submitted_ch,
+        submitted_v,
+        book,
+        actual_ch,
+        actual_v,
+        timer,
+    )
 
     ## Retrieve scheduler and card
     scheduler = settings["scheduler"]
 
-    verse_user_data = settings["bible"][book][chapter][verse].get("user_data", {})
+    verse_user_data = settings["bible"][book][chapter][verse].get(
+        "user_data", {}
+    )
     card = verse_user_data.get("card")
     if not card:
         ## Attempt to retrieve from dict; otherwise initialize
         card_dict = verse_user_data.get("card_dict")
         card = Card.from_dict(card_dict) if card_dict else Card()
-    
+
     ## Review
     if card.step is not None:
         card.step = int(card.step)  # Ensure type
@@ -904,19 +1164,42 @@ def submit(
         "due_str": card.due.isoformat(),
         "interval_secs": interval_secs,
     }
-    # TODO: Write to database
+    # Persist review result and updated scheduler state to DB
+    result_row = ReviewResult(
+        id=result["id"],
+        user_id=user_id,
+        timestamp=result["timestamp"],
+        reference=result["reference"],
+        submitted=result["submitted"],
+        stars=result["stars"],
+        score=result["score"],
+        distance=result["distance"],
+        timer=result["timer"],
+        rating=result["rating"],
+        card_dict_json=dumps_json(result["card_dict"]),
+        due_str=result["due_str"],
+        interval_secs=result["interval_secs"],
+    )
+    async with async_session_factory() as session:
+        session.add(result_row)
+        await upsert_user_settings(
+            user_id,
+            {**settings["settings"], "scheduler_dict": scheduler.to_dict()},
+        )
+        await session.commit()
 
     settings["user_data"].append(result)
-    settings["bible"][book][chapter][verse]["user_data"] = result | {"card": card}
+    settings["bible"][book][chapter][verse]["user_data"] = result | {
+        "card": card
+    }
     cache.set_cached_user_settings(user_id, settings)
-    
+
     ## Prepare context
     tsk_data = get_tsk_for_ref(actual_ref)
     harmony_data = get_harmony_entries_for_verse(actual_ref)
     ch_verses = len(settings["bible"][book][chapter])
 
     context = {
-        "request": request,
         "submitted_ref": normalized_submitted_ref,
         "actual_ref": actual_ref,
         "actual_ch": f"{book} {actual_ch}:1-{ch_verses}",
@@ -930,7 +1213,8 @@ def submit(
         "harmony_data": harmony_data,
     }
 
-    return templates.TemplateResponse("result.html", context)
+    return templates.TemplateResponse(request, "result.html", context)
+
 
 @app.post("/continue")
 def continue_game():

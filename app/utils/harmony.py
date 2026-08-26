@@ -1,17 +1,17 @@
 # app/utils/harmony.py
 
 import json
-import os
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 ## Allow relative imports when running as a standalone script
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from data.references.get_resource_references import extract_references
 
-HARMONY_PATH = os.path.join("data", "harmony", "harmony.json")
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+HARMONY_PATH = DATA_DIR / "harmony" / "harmony.json"
 
 # Load harmony data globally
 with open(HARMONY_PATH, "r", encoding="utf-8") as f:
@@ -57,16 +57,19 @@ def get_harmony_entries_for_verse(actual_ref: str) -> List[Dict[str, Any]]:
     for entry in HARMONY_DATA:
         for ref in entry.get("references", []):
             if ref_in_range(verse, ref):
-                matching_entries.append({
-                    "category": entry.get("category"),
-                    "subject": entry.get("subject"),
-                    "references": entry.get("references")
-                })
+                matching_entries.append(
+                    {
+                        "category": entry.get("category"),
+                        "subject": entry.get("subject"),
+                        "references": entry.get("references"),
+                    }
+                )
                 break
     return matching_entries
 
 
 # === Standalone Testing ===
+
 
 def _print_entries(title: str, entries: List[Dict[str, Any]]):
     print(f"\n=== {title} ===")
@@ -85,7 +88,8 @@ if __name__ == "__main__":
 
     # Test Matthew 5:15 should match 2 entries
     matt_entries = get_harmony_entries_for_verse("Matthew 5:15")
-    assert len(matt_entries) == 2, f"Expected 2 entries, got {len(matt_entries)}"
+    n_matt = len(matt_entries)
+    assert n_matt == 2, f"Expected 2 entries, got {n_matt}"
     _print_entries("Matthew 5:15", matt_entries)
 
     # Test Luke 5:4 should match relevant entries
