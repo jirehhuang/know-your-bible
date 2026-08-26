@@ -205,7 +205,7 @@ BOOK_TO_TESTAMENT = {book: "OT" for book in OT_BOOKS} | {
 
 ## Build list of all authors from verse_counts.json
 AUTHORS = set()
-verse_counts_path = Path("data/references/verse_counts.json")
+verse_counts_path = DATA_DIR / "references" / "verse_counts.json"
 if verse_counts_path.exists():
     with open(verse_counts_path, "r") as f:
         data = json.load(f)
@@ -220,7 +220,9 @@ AUTHORS = sorted(AUTHORS)
 
 
 def get_top_n(
-    n=10, authors=["all"], counts_file="data/references/verse_counts.json"
+    n=10,
+    authors=["all"],
+    counts_file=None,
 ):
     """
     Get the top N verses with the highest mention counts.
@@ -235,7 +237,11 @@ def get_top_n(
     """
     results = []
 
-    path = Path(counts_file)
+    path = (
+        Path(counts_file)
+        if counts_file
+        else DATA_DIR / "references" / "verse_counts.json"
+    )
     if not path.exists():
         print(f"[ERROR] verse_counts.json not found at {path}")
         return []
