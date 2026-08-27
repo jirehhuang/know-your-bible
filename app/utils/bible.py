@@ -1,32 +1,92 @@
 import json
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 ## Constants
 
 OT_BOOKS = [
-    "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth",
-    "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah",
-    "Esther", "Job", "Psalms", "Proverbs", "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah",
-    "Lamentations", "Ezekiel", "Daniel", "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah",
-    "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi"
+    "Genesis",
+    "Exodus",
+    "Leviticus",
+    "Numbers",
+    "Deuteronomy",
+    "Joshua",
+    "Judges",
+    "Ruth",
+    "1 Samuel",
+    "2 Samuel",
+    "1 Kings",
+    "2 Kings",
+    "1 Chronicles",
+    "2 Chronicles",
+    "Ezra",
+    "Nehemiah",
+    "Esther",
+    "Job",
+    "Psalms",
+    "Proverbs",
+    "Ecclesiastes",
+    "Song of Solomon",
+    "Isaiah",
+    "Jeremiah",
+    "Lamentations",
+    "Ezekiel",
+    "Daniel",
+    "Hosea",
+    "Joel",
+    "Amos",
+    "Obadiah",
+    "Jonah",
+    "Micah",
+    "Nahum",
+    "Habakkuk",
+    "Zephaniah",
+    "Haggai",
+    "Zechariah",
+    "Malachi",
 ]
 
 NT_BOOKS = [
-    "Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians",
-    "Galatians", "Ephesians", "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians",
-    "1 Timothy", "2 Timothy", "Titus", "Philemon", "Hebrews", "James", "1 Peter", "2 Peter",
-    "1 John", "2 John", "3 John", "Jude", "Revelation"
+    "Matthew",
+    "Mark",
+    "Luke",
+    "John",
+    "Acts",
+    "Romans",
+    "1 Corinthians",
+    "2 Corinthians",
+    "Galatians",
+    "Ephesians",
+    "Philippians",
+    "Colossians",
+    "1 Thessalonians",
+    "2 Thessalonians",
+    "1 Timothy",
+    "2 Timothy",
+    "Titus",
+    "Philemon",
+    "Hebrews",
+    "James",
+    "1 Peter",
+    "2 Peter",
+    "1 John",
+    "2 John",
+    "3 John",
+    "Jude",
+    "Revelation",
 ]
 
 ## Where translations/{translation}.json exists
 AVAIL_TRANSLATIONS = {
-    path.stem
-    for path in Path("data/translations").glob("*.json")
+    path.stem for path in (DATA_DIR / "translations").glob("*.json")
 }
 
 
-def get_bible_translation(translation: str = "esv", bool_counts: bool = True, user_data = []) -> dict:
+def get_bible_translation(
+    translation: str = "esv", bool_counts: bool = True, user_data=[]
+) -> dict:
     """
     Load the specified Bible translation, optionally with verse usage counts.
 
@@ -34,10 +94,11 @@ def get_bible_translation(translation: str = "esv", bool_counts: bool = True, us
         translation (str): The translation to load (e.g., "esv").
         bool_counts (bool): Whether to augment verses with count data.
 
-    Returns:
+    Returns
+    -------
         dict: Loaded Bible data.
     """
-    path = Path(f"data/translations/{translation.lower()}.json")
+    path = DATA_DIR / "translations" / f"{translation.lower()}.json"
     if not path.exists():
         print(f"[WARNING] Bible file not found: {path}")
         return {}
@@ -47,7 +108,7 @@ def get_bible_translation(translation: str = "esv", bool_counts: bool = True, us
     print(f"[DEBUG] Loaded Bible from {path}")
 
     if bool_counts:
-        counts_path = Path("data/references/verse_counts.json")
+        counts_path = DATA_DIR / "references" / "verse_counts.json"
         if counts_path.exists():
             with open(counts_path, "r") as f:
                 counts = json.load(f)
@@ -59,14 +120,17 @@ def get_bible_translation(translation: str = "esv", bool_counts: bool = True, us
                         try:
                             bible[book][chapter][verse].update(count_data)
                         except KeyError:
-                            print(f"[WARNING] Skipping missing verse: {book} {chapter}:{verse}")
+                            print(
+                                f"[WARNING] Skipping missing verse: {book} {chapter}:{verse}"
+                            )
         else:
             print(f"[WARNING] verse_counts.json not found at {counts_path}")
-    
+
     if user_data:
         add_user_data(user_data, bible)
 
     return bible
+
 
 def add_user_data(user_data: list, bible: dict):
     """
@@ -113,12 +177,18 @@ def add_user_data(user_data: list, bible: dict):
             chapter = chapter.lstrip("0")
             verse = verse.lstrip("0")
 
-            if book in bible and chapter in bible[book] and verse in bible[book][chapter]:
+            if (
+                book in bible
+                and chapter in bible[book]
+                and verse in bible[book][chapter]
+            ):
                 bible[book][chapter][verse]["user_data"] = item
             else:
                 print(f"[WARNING] Verse not found in Bible: {reference}")
         except Exception as e:
-            print(f"[ERROR] Failed to insert user data for reference {reference}: {e}")
+            print(
+                f"[ERROR] Failed to insert user data for reference {reference}: {e}"
+            )
 
     ## Clean up temp
     for record in latest_data.values():
@@ -129,11 +199,13 @@ def add_user_data(user_data: list, bible: dict):
 BIBLE = get_bible_translation()
 
 CHAPTER_COUNTS = {book: len(chapters) for book, chapters in BIBLE.items()}
-BOOK_TO_TESTAMENT = {book: "OT" for book in OT_BOOKS} | {book: "NT" for book in NT_BOOKS}
+BOOK_TO_TESTAMENT = {book: "OT" for book in OT_BOOKS} | {
+    book: "NT" for book in NT_BOOKS
+}
 
 ## Build list of all authors from verse_counts.json
 AUTHORS = set()
-verse_counts_path = Path("data/references/verse_counts.json")
+verse_counts_path = DATA_DIR / "references" / "verse_counts.json"
 if verse_counts_path.exists():
     with open(verse_counts_path, "r") as f:
         data = json.load(f)
@@ -147,7 +219,11 @@ else:
 AUTHORS = sorted(AUTHORS)
 
 
-def get_top_n(n=10, authors=["all"], counts_file="data/references/verse_counts.json"):
+def get_top_n(
+    n=10,
+    authors=["all"],
+    counts_file=None,
+):
     """
     Get the top N verses with the highest mention counts.
 
@@ -155,12 +231,17 @@ def get_top_n(n=10, authors=["all"], counts_file="data/references/verse_counts.j
         n (int): Number of top verses to return.
         authors (list): List of authors to include or ["all"] for total count.
 
-    Returns:
+    Returns
+    -------
         list of tuples: (book, chapter, verse, count)
     """
     results = []
 
-    path = Path(counts_file)
+    path = (
+        Path(counts_file)
+        if counts_file
+        else DATA_DIR / "references" / "verse_counts.json"
+    )
     if not path.exists():
         print(f"[ERROR] verse_counts.json not found at {path}")
         return []
@@ -174,7 +255,11 @@ def get_top_n(n=10, authors=["all"], counts_file="data/references/verse_counts.j
                 if "all" in authors:
                     count = count_data.get("count", 0)
                 else:
-                    count = sum(count_data.get(author, 0) for author in authors if author in count_data)
+                    count = sum(
+                        count_data.get(author, 0)
+                        for author in authors
+                        if author in count_data
+                    )
                 results.append((book, chapter, verse, count))
 
     results.sort(key=lambda x: x[3], reverse=True)

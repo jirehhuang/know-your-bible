@@ -1,14 +1,15 @@
-import os
-import sys
 import json
-import re
-import nltk
 import multiprocessing
+import os
+import re
+import sys
 from pathlib import Path
-from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-from playwright.sync_api import sync_playwright
+
+import nltk
+from bs4 import BeautifulSoup
 from get_resource_urls import url_to_filename
+from playwright.sync_api import sync_playwright
 
 ## Adjust path to import BIBLE
 sys.path.append(str(Path(__file__).resolve().parents[2]))
@@ -20,14 +21,16 @@ from nltk.tokenize import sent_tokenize
 
 ## Constants
 BIBLE_BOOKS = set(BIBLE.keys())
-TEMP_URL_DIR = 'data/references/temp_url'
-RESOURCE_JSON = 'data/references/resources.json'
+TEMP_URL_DIR = "data/references/temp_url"
+RESOURCE_JSON = "data/references/resources.json"
 
 os.makedirs(TEMP_URL_DIR, exist_ok=True)
+
 
 ## Utilities
 def ensure_dirs():
     os.makedirs(TEMP_URL_DIR, exist_ok=True)
+
 
 def contains_bible_book(sentence: str) -> bool:
     return any(book in sentence for book in BIBLE_BOOKS)
@@ -46,15 +49,17 @@ def download_and_save_article(url: str, domain: str) -> str:
         return html_path
 
     with sync_playwright() as p:
-        headless = not ("desiringgod.org" in domain)
+        headless = "desiringgod.org" not in domain
         browser = p.chromium.launch(headless=headless)
         page = browser.new_page()
 
-        print(f"[DEBUG] Visiting {url} ({'headless' if headless else 'headful'})")
+        print(
+            f"[DEBUG] Visiting {url} ({'headless' if headless else 'headful'})"
+        )
         page.goto(url, timeout=60000)
 
         html = page.content()
-        with open(html_path, 'w', encoding='utf-8') as f:
+        with open(html_path, "w", encoding="utf-8") as f:
             f.write(html)
 
         print(f"[DEBUG] Saved HTML to {html_path}")
@@ -62,43 +67,58 @@ def download_and_save_article(url: str, domain: str) -> str:
 
     return html_path
 
+
 def normalize_text(text: str) -> str:
     text = re.sub(r"[–—−‒―]", "-", text)
     text = re.sub(r"[\n\r\t]", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
+
 def extract_paragraphs_from_dg(html_path: str) -> str:
-    with open(html_path, 'r', encoding='utf-8') as f:
-        soup = BeautifulSoup(f.read(), 'html.parser')
+    with open(html_path, "r", encoding="utf-8") as f:
+        soup = BeautifulSoup(f.read(), "html.parser")
 
     body = soup.select_one("div.resource__body")
     if not body:
         return ""
 
     paragraphs = []
-    for p in body.find_all('p'):
-        text_parts = [t.get_text(" ", strip=True) for t in p.contents if hasattr(t, 'get_text')]
+    for p in body.find_all("p"):
+        text_parts = [
+            t.get_text(" ", strip=True)
+            for t in p.contents
+            if hasattr(t, "get_text")
+        ]
         paragraph_text = normalize_text(" ".join(text_parts))
         paragraphs.append(paragraph_text)
 
     return " ".join(paragraphs)
 
-def extract_paragraphs_from_gty(html_path: str) -> str:
-    with open(html_path, 'r', encoding='utf-8') as f:
-        soup = BeautifulSoup(f.read(), 'html.parser')
 
-    body = soup.find("div", attrs={"data-swiftype-name": "body", "data-swiftype-type": "text"})
+def extract_paragraphs_from_gty(html_path: str) -> str:
+    with open(html_path, "r", encoding="utf-8") as f:
+        soup = BeautifulSoup(f.read(), "html.parser")
+
+    body = soup.find(
+        "div",
+        attrs={"data-swiftype-name": "body", "data-swiftype-type": "text"},
+    )
     if not body:
         return ""
 
     paragraphs = []
-    for p in body.find_all('p'):
-        text_parts = [t.get_text(" ", strip=True) for t in p.contents if hasattr(t, 'get_text')]
+    for p in body.find_all("p"):
+        text_parts = [
+            t.get_text(" ", strip=True)
+            for t in p.contents
+            if hasattr(t, "get_text")
+        ]
         paragraph_text = normalize_text(" ".join(text_parts))
         paragraphs.append(paragraph_text)
 
     return " ".join(paragraphs)
+
 
 def process_all_resources(retry_empty=False):
     ensure_dirs()
@@ -107,19 +127,21 @@ def process_all_resources(retry_empty=False):
         print(f"[ERROR] File not found: {RESOURCE_JSON}")
         return
 
-    with open(RESOURCE_JSON, 'r', encoding='utf-8') as f:
+    with open(RESOURCE_JSON, "r", encoding="utf-8") as f:
         resources = json.load(f)
 
     save_every = 100
     processed_since_save = 0
 
     for idx, (url, meta) in enumerate(sorted(resources.items()), 1):
-        if 'sentences' in meta:
-            if retry_empty and not meta['sentences']:
+        if "sentences" in meta:
+            if retry_empty and not meta["sentences"]:
                 print(f"[{idx}] Retrying already-processed: {url}")
 
                 ## Delete cached HTML to retry
-                html_path = os.path.join(TEMP_URL_DIR, f"{url_to_filename(url)}.html")
+                html_path = os.path.join(
+                    TEMP_URL_DIR, f"{url_to_filename(url)}.html"
+                )
                 if os.path.exists(html_path):
                     os.remove(html_path)
             else:
@@ -128,9 +150,12 @@ def process_all_resources(retry_empty=False):
 
         print(f"[{idx}] Processing: {url}")
 
-        if "www.desiringgod.org/labs" in url or "www.desiringgod.org/light-and-truth" in url:
+        if (
+            "www.desiringgod.org/labs" in url
+            or "www.desiringgod.org/light-and-truth" in url
+        ):
             print(f"[DEBUG] Skipping labs resource: {url}")
-            resources[url]['sentences'] = []
+            resources[url]["sentences"] = []
             processed_since_save += 1
             continue
 
@@ -138,39 +163,48 @@ def process_all_resources(retry_empty=False):
             domain = urlparse(url).netloc
             html_path = download_and_save_article(url, domain)
 
-            if 'desiringgod.org' in domain:
+            if "desiringgod.org" in domain:
                 article_text = extract_paragraphs_from_dg(html_path)
-            elif 'gty.org' in domain:
+            elif "gty.org" in domain:
                 article_text = extract_paragraphs_from_gty(html_path)
             else:
                 print(f"[ERROR] Unsupported domain: {domain}")
-                resources[url]['sentences'] = None
+                resources[url]["sentences"] = None
                 processed_since_save += 1
                 continue
 
             sentences = sent_tokenize(article_text)
-            bible_sentences = [s.strip() for s in sentences if contains_bible_book(s)]
-            resources[url]['sentences'] = sorted(bible_sentences)
+            bible_sentences = [
+                s.strip() for s in sentences if contains_bible_book(s)
+            ]
+            resources[url]["sentences"] = sorted(bible_sentences)
 
-            print(f"[DEBUG] Added {len(bible_sentences)} sentence(s) from {url}")
+            print(
+                f"[DEBUG] Added {len(bible_sentences)} sentence(s) from {url}"
+            )
 
         except Exception as e:
             print(f"❌ Error processing {url}: {e}")
-            resources[url]['sentences'] = None
+            resources[url]["sentences"] = None
 
         processed_since_save += 1
 
         if processed_since_save >= save_every:
-            with open(RESOURCE_JSON, 'w', encoding='utf-8') as f:
+            with open(RESOURCE_JSON, "w", encoding="utf-8") as f:
                 json.dump(resources, f, ensure_ascii=False, indent=2)
-            print(f"[INFO] Saved progress after {processed_since_save} resources.")
+            print(
+                f"[INFO] Saved progress after {processed_since_save} resources."
+            )
             processed_since_save = 0
 
     ## Final save if any remaining
     if processed_since_save > 0:
-        with open(RESOURCE_JSON, 'w', encoding='utf-8') as f:
+        with open(RESOURCE_JSON, "w", encoding="utf-8") as f:
             json.dump(resources, f, ensure_ascii=False, indent=2)
-        print(f"[INFO] Final save of remaining {processed_since_save} resources.")
+        print(
+            f"[INFO] Final save of remaining {processed_since_save} resources."
+        )
+
 
 def download_worker(url_domain_tuple):
     url, domain = url_domain_tuple
@@ -179,6 +213,7 @@ def download_worker(url_domain_tuple):
     except Exception as e:
         print(f"[ERROR] Failed to download {url}: {e}")
         return None
+
 
 def prerun_download_articles():
     """
@@ -190,7 +225,7 @@ def prerun_download_articles():
         print(f"[ERROR] File not found: {RESOURCE_JSON}")
         return
 
-    with open(RESOURCE_JSON, 'r', encoding='utf-8') as f:
+    with open(RESOURCE_JSON, "r", encoding="utf-8") as f:
         resources = json.load(f)
 
     # Prepare (url, domain) pairs for resources that need downloading
@@ -208,10 +243,14 @@ def prerun_download_articles():
         print("[INFO] No downloads needed; all HTML files cached.")
         return
 
-    print(f"[INFO] Downloading {len(jobs)} HTML files using parallel processing...\n")
+    print(
+        f"[INFO] Downloading {len(jobs)} HTML files using parallel processing...\n"
+    )
 
     max_workers = max(1, multiprocessing.cpu_count() - 1)
-    with multiprocessing.get_context("spawn").Pool(processes=max_workers) as pool:
+    with multiprocessing.get_context("spawn").Pool(
+        processes=max_workers
+    ) as pool:
         results = pool.map(download_worker, jobs)
 
     print(f"[INFO] Finished downloading {len(results)} articles.")

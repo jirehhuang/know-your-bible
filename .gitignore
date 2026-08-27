@@ -1,5 +1,4 @@
 .env
-.venv/
 *.xml
 __pycache__/
 temp/
@@ -7,3 +6,18 @@ temp_url/
 temp_year_page/
 resources.json
 test*
+
+# SQLite artifacts
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+
+# Poetry
+poetry.lock
+.cache/
+.venv/

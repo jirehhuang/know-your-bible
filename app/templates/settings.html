@@ -25,7 +25,7 @@
 
     <br><br>
 
-    {% if "@" in user_id %}
+    {% if stats.verses_reviewed %}
       <!-- Show stats table and scatter plot -->
        <h3 style="margin-bottom: 0.5em;">{{ user_id }}</h3>
 
@@ -72,7 +72,7 @@
           const tickVals = filteredTicks.flatMap(v => [-v, v]); // symmetrical ticks
           const tickLabels = tickVals.map(v => v.toString());
           const transformedTicks = tickVals.map(v => Math.asinh(v));
-          
+
           const retrievabilities = reviewData.map(r => r.retrievability);
 
           const minRet = Math.min(...retrievabilities);
@@ -208,7 +208,7 @@
     </select>
 
     <br><br>
-    
+
     <label for="selector">Selection Method:</label>
     <select name="selector" id="selector">
       <option value="random" {% if selector == "random" %}selected{% endif %}>Random</option>
@@ -312,7 +312,7 @@
     <button type="submit" style="font-size: 1em;">Save</button>
   </form>
 
-  <div id="reset-modal" style="display: none; position: fixed; top: 0; left: 0; 
+  <div id="reset-modal" style="display: none; position: fixed; top: 0; left: 0;
       width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.6); z-index: 1000;">
     <div style="background-color: var(--bg-color); color: var(--text-color); padding: 2em; max-width: 500px; margin: 10vh auto; border-radius: 10px; border: 1px solid var(--text-color);">
       <h3 style="margin-top: 0;">Confirm Data Deletion</h3>
@@ -338,19 +338,19 @@
     try {
       const iso = elem.textContent.trim();
       const dt = new Date(iso);
-      
+
       // Try local timezone first
       let options = {
         year: "numeric", month: "2-digit", day: "2-digit",
         hour: "2-digit", minute: "2-digit", second: "2-digit",
         hour12: false
       };
-      
+
       // Format as YYYY-MM-DD HH:mm:ss
       const parts = new Intl.DateTimeFormat(undefined, options).formatToParts(dt);
       const date = `${parts.find(p => p.type === 'year').value}-${parts.find(p => p.type === 'month').value}-${parts.find(p => p.type === 'day').value}`;
       const time = `${parts.find(p => p.type === 'hour').value}:${parts.find(p => p.type === 'minute').value}:${parts.find(p => p.type === 'second').value}`;
-      
+
       elem.textContent = `${date} ${time}`;
     } catch (e) {
       // If error or unknown timezone, fallback to Pacific Time

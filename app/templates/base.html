@@ -185,6 +185,7 @@
     </div>
     <div class="top-bar-right">
       {% if request.cookies.get('user_id') and '@' in request.cookies.get('user_id') %}
+        {# Logged-in users show email + logout; anonymous users just see Login #}
         <span><strong>{{ request.cookies.get('user_id') }}</strong></span>
         <a href="/logout">Logout</a>
       {% else %}
