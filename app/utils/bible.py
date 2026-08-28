@@ -1,10 +1,11 @@
+# pylint: disable=too-many-locals,too-many-nested-blocks
 import json
 from datetime import datetime
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
-## Constants
+# Constants
 
 OT_BOOKS = [
     "Genesis",
@@ -78,39 +79,49 @@ NT_BOOKS = [
     "Revelation",
 ]
 
-## Where translations/{translation}.json exists
+# Where translations/{translation}.json exists
 AVAIL_TRANSLATIONS = {
     path.stem for path in (DATA_DIR / "translations").glob("*.json")
 }
 
 
 def get_bible_translation(
-    translation: str = "esv", bool_counts: bool = True, user_data=[]
+    translation: str = "esv",
+    bool_counts: bool = True,
+    user_data: list | None = None,
 ) -> dict:
     """
     Load the specified Bible translation, optionally with verse usage counts.
 
-    Args:
-        translation (str): The translation to load (e.g., "esv").
-        bool_counts (bool): Whether to augment verses with count data.
+    Parameters
+    ----------
+    translation
+        The translation to load (e.g., "esv").
+    bool_counts
+        Whether to augment verses with count data.
+    user_data
+        Optional user review data to embed in the Bible structure.
 
     Returns
     -------
-        dict: Loaded Bible data.
+    dict
+        Loaded Bible data.
     """
+    if user_data is None:
+        user_data = []
     path = DATA_DIR / "translations" / f"{translation.lower()}.json"
     if not path.exists():
         print(f"[WARNING] Bible file not found: {path}")
         return {}
 
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         bible = json.load(f)
     print(f"[DEBUG] Loaded Bible from {path}")
 
     if bool_counts:
         counts_path = DATA_DIR / "references" / "verse_counts.json"
         if counts_path.exists():
-            with open(counts_path, "r") as f:
+            with open(counts_path, "r", encoding="utf-8") as f:
                 counts = json.load(f)
             print(f"[DEBUG] Loaded verse counts from {counts_path}")
 
@@ -121,7 +132,8 @@ def get_bible_translation(
                             bible[book][chapter][verse].update(count_data)
                         except KeyError:
                             print(
-                                f"[WARNING] Skipping missing verse: {book} {chapter}:{verse}"
+                                f"[WARNING] Skipping missing verse: "
+                                f"{book} {chapter}:{verse}"
                             )
         else:
             print(f"[WARNING] verse_counts.json not found at {counts_path}")
@@ -136,21 +148,17 @@ def add_user_data(user_data: list, bible: dict):
     """
     Adds user-specific data to the appropriate verse in the Bible structure.
 
-    Args:
-        user_data (list): List of dicts with keys including 'user_id', 'reference', 'timestamp'.
-        bible (dict): Bible structure to update in place.
-
-    Example input record:
-        {
-            "user_id": "abc123",
-            "reference": "1 Corinthians 10:13",
-            "timestamp": "2024-10-01T12:34:56",
-            ...
-        }
+    Parameters
+    ----------
+    user_data
+        List of dicts with keys including 'user_id', 'reference',
+        'timestamp'.
+    bible
+        Bible structure to update in place.
     """
     latest_data = {}
 
-    ## Organize most recent entry for each (user_id, reference)
+    # Organize most recent entry for each (user_id, reference)
     for item in user_data:
         user_id = item.get("user_id")
         reference = item.get("reference")
@@ -165,7 +173,7 @@ def add_user_data(user_data: list, bible: dict):
             item["_dt"] = dt  # Temporary for sorting
             latest_data[key] = item
 
-    ## Insert into Bible structure
+    # Insert into Bible structure
     for (user_id, reference), item in latest_data.items():
         try:
             book_verse, verse_part = reference.rsplit(" ", 1)
@@ -185,17 +193,18 @@ def add_user_data(user_data: list, bible: dict):
                 bible[book][chapter][verse]["user_data"] = item
             else:
                 print(f"[WARNING] Verse not found in Bible: {reference}")
-        except Exception as e:
+        except (ValueError, AttributeError, KeyError) as e:
             print(
-                f"[ERROR] Failed to insert user data for reference {reference}: {e}"
+                f"[ERROR] Failed to insert user data for "
+                f"reference {reference}: {e}"
             )
 
-    ## Clean up temp
+    # Clean up temp
     for record in latest_data.values():
         record.pop("_dt", None)
 
 
-## Global load (without counts by default)
+# Global load (without counts by default)
 BIBLE = get_bible_translation()
 
 CHAPTER_COUNTS = {book: len(chapters) for book, chapters in BIBLE.items()}
@@ -203,12 +212,12 @@ BOOK_TO_TESTAMENT = {book: "OT" for book in OT_BOOKS} | {
     book: "NT" for book in NT_BOOKS
 }
 
-## Build list of all authors from verse_counts.json
+# Build list of all authors from verse_counts.json
 AUTHORS = set()
 verse_counts_path = DATA_DIR / "references" / "verse_counts.json"
 if verse_counts_path.exists():
-    with open(verse_counts_path, "r") as f:
-        data = json.load(f)
+    with open(verse_counts_path, "r", encoding="utf-8") as _counts_fh:
+        data = json.load(_counts_fh)
         for book_data in data.values():
             for chapter_data in book_data.values():
                 for verse_data in chapter_data.values():
@@ -220,21 +229,29 @@ AUTHORS = sorted(AUTHORS)
 
 
 def get_top_n(
-    n=10,
-    authors=["all"],
-    counts_file=None,
-):
+    n: int = 10,
+    authors: list | None = None,
+    counts_file: str | None = None,
+) -> list:
     """
     Get the top N verses with the highest mention counts.
 
-    Args:
-        n (int): Number of top verses to return.
-        authors (list): List of authors to include or ["all"] for total count.
+    Parameters
+    ----------
+    n
+        Number of top verses to return.
+    authors
+        List of authors to include or ["all"] for total count.
+    counts_file
+        Path to verse_counts.json; uses default data path if None.
 
     Returns
     -------
-        list of tuples: (book, chapter, verse, count)
+    list
+        (book, chapter, verse, count) tuples sorted by count descending.
     """
+    if authors is None:
+        authors = ["all"]
     results = []
 
     path = (
@@ -246,7 +263,7 @@ def get_top_n(
         print(f"[ERROR] verse_counts.json not found at {path}")
         return []
 
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         counts_data = json.load(f)
 
     for book, chapters in counts_data.items():

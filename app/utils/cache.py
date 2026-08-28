@@ -4,7 +4,7 @@ from threading import Lock
 
 from cachetools import TTLCache
 
-## Caches per user_id with 1-hour TTL
+# Caches per user_id with 1-hour TTL
 user_cache: TTLCache = TTLCache(maxsize=1000, ttl=3600)
 cache_lock = Lock()
 

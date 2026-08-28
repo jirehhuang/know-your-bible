@@ -1,3 +1,4 @@
+# pylint: disable=too-many-locals
 from collections import defaultdict
 from pathlib import Path
 
@@ -107,7 +108,9 @@ def parse_standard_ref(ref: str):
 
 
 def get_tsk_for_ref(ref: str):
-    """Takes 'John 3:16' or '1 Corinthians 13:4' and returns TSK entries for that verse."""
+    """
+    Take a reference like 'John 3:16' and return TSK entries for that verse.
+    """
     try:
         book, chapter, verse = parse_standard_ref(ref)
     except (ValueError, IndexError):
@@ -126,12 +129,16 @@ def get_tsk_for_ref(ref: str):
     entries = TSK_LOOKUP.get((book_key, chapter, verse), [])
     for word, ref_str in entries:
         ref_list = []
-        for ref in ref_str.split(";"):
-            if not ref.strip():
+        for ref_entry in ref_str.split(";"):
+            if not ref_entry.strip():
                 continue
-            abbrev = ref.split()[0] if " " in ref else ref.split(":")[0]
+            abbrev = (
+                ref_entry.split()[0]
+                if " " in ref_entry
+                else ref_entry.split(":")[0]
+            )
             full_name = TSK_BOOKS.get(abbrev, abbrev)
-            formatted = f"{full_name} {ref[len(abbrev) :].lstrip()}"
+            formatted = f"{full_name} {ref_entry[len(abbrev) :].lstrip()}"
             ref_list.append(formatted)
         results.append({"word": word, "references": ref_list})
 
@@ -152,13 +159,13 @@ if __name__ == "__main__":
         "Habakkuk 2:4",  # Obscure OT prophet
     ]
 
-    for ref in test_refs:
-        print(f"\nTesting: {ref}")
-        results = get_tsk_for_ref(ref)
-        if not results:
+    for test_ref in test_refs:
+        print(f"\nTesting: {test_ref}")
+        test_results = get_tsk_for_ref(test_ref)
+        if not test_results:
             print("  ❌ No entries found")
         else:
-            for entry in results:
+            for entry in test_results:
                 print(f"  Word: {entry['word']}")
                 for r in entry["references"]:
                     print(f"    → {r}")

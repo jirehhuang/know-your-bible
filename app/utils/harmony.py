@@ -1,12 +1,8 @@
 # app/utils/harmony.py
 
 import json
-import sys
 from pathlib import Path
 from typing import Any, Dict, List
-
-## Allow relative imports when running as a standalone script
-sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from data.references.get_resource_references import extract_references
 
@@ -22,7 +18,8 @@ GOSPELS = {"Matthew", "Mark", "Luke", "John"}
 
 def ref_in_range(ref: str, target: str) -> bool:
     """
-    Returns True if `ref` (e.g., "Luke 5:4") is included in `target` (e.g., "Luke 5:1-6").
+    Returns True if `ref` (e.g., "Luke 5:4") is included in
+    `target` (e.g., "Luke 5:1-6").
     """
     ref_parsed = extract_references(ref)
     target_parsed = extract_references(target)

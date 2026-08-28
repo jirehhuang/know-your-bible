@@ -5,6 +5,8 @@ persist user settings and review results. SQLite runs in WAL mode with
 foreign keys enforced.
 """
 
+# pylint: disable=too-few-public-methods
+
 import json
 import os
 from datetime import datetime
@@ -24,7 +26,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-## Default DB location: <repo>/data/app.db (independent of cwd)
+# Default DB location: <repo>/data/app.db (independent of cwd)
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{DATA_DIR / 'app.db'}"
 
