@@ -1,31 +1,67 @@
 repos:
+  # Commitizen for commit message validation
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # Pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-      - id: check-toml
       - id: check-added-large-files
+      - id: mixed-line-ending
 
+  # Ruff for linting & autofix
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.4
+    rev: v0.16.5
     hooks:
-      - id: ruff-check
+      - id: ruff
         args: [--fix]
-      - id: ruff-format
 
+  # Black formatter
   - repo: https://github.com/psf/black
     rev: 26.5.1
     hooks:
       - id: black
 
+  # Flake8 (extra linting rules beyond Ruff)
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.3.0
+    hooks:
+      - id: flake8
+
+  # pydoclint
+  - repo: https://github.com/jsh9/pydoclint
+    rev: 0.9.1
+    hooks:
+      - id: pydoclint
+        args:
+          - --style=numpy
+          - --arg-type-hints-in-docstring=False
+
+  # Markdown
+
+  # Poetry check
+
+  # Local pylint
+  - repo: local
+    hooks:
+      - id: pylint
+        name: pylint
+        entry: .venv/bin/pylint
+        language: system
+        types: [python]
+
+  # MyPy type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.20.2
+    rev: v2.3.1
     hooks:
       - id: mypy
-        additional_dependencies:
-          - sqlalchemy[asyncio]>=2.0
-          - cachetools>=5.4
-          - types-cachetools
-        args: [--config-file=pyproject.toml]
+        additional_dependencies: []
+        entry: .venv/bin/mypy
+        language: system

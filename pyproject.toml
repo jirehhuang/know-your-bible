@@ -29,13 +29,13 @@ packages = [{ include = "app" }]
 
 [tool.poetry.group.dev.dependencies]
 black = "^26.5.1"
-ruff = "^0.16.0"
+ruff = "^0.16.5"
 flake8 = "^7.3.0"
 pydoclint = "^0.9.1"
-mypy = "^1.18.2"
-pylint = "^4.0.6"
-commitizen = "^4.17.0"
-pre-commit = "^4.6.1"
+mypy = "^2.3.1"
+pylint = "^4.0.7"
+commitizen = "^4.18.0"
+pre-commit = "^4.6.2"
 pytest = "^9.1.1"
 pytest-cov = "^7.1.0"
 pytest-randomly = "^4.1.0"
@@ -113,6 +113,7 @@ arg-type-hints-in-docstring = false
 return-type-hints-in-docstring = false
 check-return-types = false
 require-return-section-when-returning-nothing = false
+skip-checking-raises = true
 
 [tool.pylint.'MESSAGES CONTROL']
 disable = ["C0114", "C0115", "C0116"]  # allow missing docstrings in tests

@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"  # Documentation specifies pip for poetry
+    directory: "/"  # Location of pyproject.toml
+    schedule:
+      interval: "weekly"  # Check for updates once a week
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pre-commit"  # Keeps .pre-commit-config.yaml hook revs current
+    directory: "/"
+    schedule:
+      interval: "weekly"

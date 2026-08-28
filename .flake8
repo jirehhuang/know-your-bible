@@ -1,0 +1,14 @@
+# .flake8 configuration file
+#
+# NOTE: flake8 does not read [tool.flake8] from pyproject.toml unless the
+# flake8-pyproject plugin is installed, so this file is the single source
+# of truth for flake8 settings. Keep max-line-length in sync with black's
+# line-length in pyproject.toml.
+
+[flake8]
+max-line-length = 79
+# E203 (whitespace before ':') and W503 (line break before binary operator)
+# conflict with black's formatting style; see
+# https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html
+extend-ignore = E203, W503
+per-file-ignores = __init__.py:F401, conf.py:E501
