@@ -34,12 +34,14 @@ repos:
     rev: 7.3.0
     hooks:
       - id: flake8
+        exclude: ^data/
 
   # pydoclint
   - repo: https://github.com/jsh9/pydoclint
     rev: 0.9.1
     hooks:
       - id: pydoclint
+        exclude: ^data/
         args:
           - --style=numpy
           - --arg-type-hints-in-docstring=False
@@ -56,6 +58,7 @@ repos:
         entry: .venv/bin/pylint
         language: system
         types: [python]
+        exclude: ^data/
 
   # MyPy type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
