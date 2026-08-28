@@ -11,4 +11,10 @@ max-line-length = 79
 # conflict with black's formatting style; see
 # https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html
 extend-ignore = E203, W503
+exclude = data/
 per-file-ignores = __init__.py:F401, conf.py:E501
+# pydoclint settings — mirror [tool.pydoclint] in pyproject.toml
+style = numpy
+check_return_types = False
+require_return_section_when_returning_nothing = False
+skip_checking_raises = True

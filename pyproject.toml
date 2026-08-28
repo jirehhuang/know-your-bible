@@ -103,10 +103,6 @@ convention = "numpy"
 "app/utils/tsk.py" = ["D", "PLR2004", "PLR1704", "E501"]
 "app/utils/harmony.py" = ["D100", "D200", "D401", "D205", "E501", "PLR2004"]
 
-[tool.flake8]
-max-line-length = 79
-extend-ignore = ["E203", "W503"]
-
 [tool.pydoclint]
 style = "numpy"
 arg-type-hints-in-docstring = false
